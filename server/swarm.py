@@ -17,6 +17,7 @@ from typing import Any, Awaitable, Callable
 
 from .fixes import FIXES
 from .physics import MODES, TERRAINS, evaluate_scenario
+from .routesim import evaluate_route_scenario
 from .roster import ROLES
 from .weather import find_hours
 
@@ -96,7 +97,7 @@ class AgentLab:
 
     async def run_physics_test(self, args: dict) -> dict:
         self.tool_calls += 1
-        res = await asyncio.to_thread(evaluate_scenario, self.s.platform, self.s.params, args, 200, 11 + len(self.tests))
+        res = await asyncio.to_thread(self.s.evaluate, args, 200, 11 + len(self.tests))
         self.tests.append({"scenario": args, "pass": res["pass_rate_pct"], "fail": res["dominant_failure"]})
         self.s.physics_trials += res["trials"]
         await self._event("tool_result", tool="run_physics_test", passrate=res["pass_rate_pct"],
@@ -111,7 +112,7 @@ class AgentLab:
                 sc = json.loads(sc)
             except Exception:
                 sc = {}
-        res = await asyncio.to_thread(evaluate_scenario, self.s.platform, self.s.params, sc, 400, 99)
+        res = await asyncio.to_thread(self.s.evaluate, sc, 400, 99)
         if res["pass_rate_pct"] > 80:
             await self._event("tool_result", tool="submit_failure_case",
                               text=f"rejected — verified {res['pass_rate_pct']}% pass, not a failure")
@@ -144,8 +145,9 @@ class AgentLab:
 
 
 class Swarm:
-    def __init__(self, platform, params, weather, climate, location, n_agents, emit: Emit, provider: str | None = None):
+    def __init__(self, platform, params, weather, climate, location, n_agents, emit: Emit, provider: str | None = None, prof=None):
         self.platform, self.params, self.weather, self.climate = platform, params, weather, climate
+        self.prof = prof
         self.location, self.emit = location, emit
         self.roles = ROLES[platform][:n_agents]
         self.cases: list[dict] = []
@@ -155,6 +157,11 @@ class Swarm:
         self.shear = (max(params.get("cruise_altitude_m", 10), 10) / 10) ** 0.14 if platform == "drone" else 1.0
         self.cfg = claude_config(provider)
         self.backend = "claude-agent-sdk" if self.cfg else "deterministic"
+
+    def evaluate(self, scenario, trials=200, seed=7):
+        if self.prof:
+            return evaluate_route_scenario(self.platform, self.params, scenario, self.prof, trials, seed)
+        return evaluate_scenario(self.platform, self.params, scenario, trials, seed)
 
     def roster(self):
         return [{"id": i, "name": r[0], "focus": r[1], "vars": r[2]} for i, r in enumerate(self.roles)]
@@ -197,7 +204,21 @@ class Swarm:
         return (f"VEHICLE ({self.platform}) PARAMETERS:\n{json.dumps(self.params)}\n\n"
                 f"LOCATION: {self.location['name']} ({self.location['lat']}, {self.location['lon']})\n"
                 f"LAST 12 MONTHS OF HOURLY WEATHER (summary):\n{json.dumps(clim)}\n\n{note}\n\n"
-                f"SCENARIO FIELDS for run_physics_test / submit_failure_case: {json.dumps(fields)}")
+                f"SCENARIO FIELDS for run_physics_test / submit_failure_case: {json.dumps(fields)}" + self._route_context())
+
+    def _route_context(self) -> str:
+        if not self.prof:
+            return ""
+        pr = self.prof
+        keys = ("i", "length_m", "heading_deg", "clearance_m", "max_obstacle_m", "people_per_km2", "outdoor_per_km2", "canyon",
+                "nlos", "slope_deg", "crossings", "sensitive", "airspace")
+        segs = [{k: sg[k] for k in keys} for sg in pr["segments"]]
+        return (f"\n\nMISSION ROUTE: {pr['name']} ({pr['routed']}), {pr['length_m'] / 1000:.2f} km"
+                f"{' out-and-back' if pr['return'] else ''}, cruise {pr['alt_m']:.0f} m. Airspace crossed: "
+                f"{json.dumps([{k: z[k] for k in ('name', 'type', 'frac')} for z in pr['airspace']])}.\n"
+                f"Every physics test flies/drives THIS route. Wind direction matters (headwind/crosswind per leg); "
+                f"hour_of_day sets pedestrians, office occupancy and darkness. Extra scenario fields: "
+                f"wind_dir_deg (meteorological, from), hour_of_day (0-24 UTC).\nROUTE SEGMENTS: {json.dumps(segs)}")
 
     # ---------- Claude Agent SDK backend ----------
     async def _claude_agent(self, lab: AgentLab):
@@ -206,6 +227,9 @@ class Swarm:
 
         fields = DRONE_FIELDS if self.platform == "drone" else ROBOT_FIELDS
         props: dict[str, Any] = {k: {"type": "number", "description": v} for k, v in fields.items()}
+        if self.prof:
+            props["wind_dir_deg"] = {"type": "number", "description": "wind direction, degrees the wind blows FROM"}
+            props["hour_of_day"] = {"type": "number", "description": "departure hour 0-24 UTC"}
         if self.platform == "robot":
             props["terrain"] = {"type": "string", "enum": TERRAINS}
         scen_schema = {"type": "object", "properties": props}

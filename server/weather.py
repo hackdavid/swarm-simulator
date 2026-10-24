@@ -24,10 +24,10 @@ PRESETS = [
 ]
 
 HOURLY = ["temperature_2m", "relative_humidity_2m", "precipitation", "rain", "snowfall",
-          "surface_pressure", "wind_speed_10m", "wind_gusts_10m", "cloud_cover"]
+          "surface_pressure", "wind_speed_10m", "wind_gusts_10m", "cloud_cover", "wind_direction_10m"]
 KEYMAP = {"temperature_2m": "temp", "relative_humidity_2m": "rh", "precipitation": "precip", "rain": "rain",
           "snowfall": "snow", "surface_pressure": "pressure", "wind_speed_10m": "wind",
-          "wind_gusts_10m": "gust", "cloud_cover": "cloud"}
+          "wind_gusts_10m": "gust", "cloud_cover": "cloud", "wind_direction_10m": "wdir"}
 
 
 def _window():
@@ -39,7 +39,7 @@ def _window():
 async def fetch_year(lat: float, lon: float) -> dict:
     start, end = _window()
     CACHE.mkdir(parents=True, exist_ok=True)
-    f = CACHE / f"{lat:.3f}_{lon:.3f}_{start}.json"
+    f = CACHE / f"{lat:.3f}_{lon:.3f}_{start}_v2.json"
     if f.exists():
         raw = json.loads(f.read_text())
     else:
@@ -80,7 +80,7 @@ def _synthetic(lat, lon, start, err):
             "temp": temp, "rh": np.clip(70 + 25 * (precip > 0) + rng.normal(0, 10, n), 20, 100), "precip": precip,
             "rain": np.where(temp > 0.5, precip, 0), "snow": np.where(temp <= 0.5, precip * 0.7, 0),
             "pressure": 1013 + rng.normal(0, 9, n), "wind": wind, "gust": wind * (1.4 + rng.random(n) * 0.6),
-            "cloud": np.clip(rng.normal(60, 30, n), 0, 100)}
+            "cloud": np.clip(rng.normal(60, 30, n), 0, 100), "wdir": (240 + rng.normal(0, 60, n)) % 360}
 
 
 def summarise(w: dict) -> dict:

@@ -170,6 +170,29 @@ Runs the swarm only (no grid) and writes wall time, per-agent latency, time-to-f
 | `WS` | `/ws/runs/{id}` | Replayable event stream: JSON events plus binary 64×64 result tiles. |
 | `GET` | `/api/runs/{id}/cell?x=&y=` | Re-simulate one cell with 64 fresh trials and return its forensics. |
 
+## Mission routes (Canary Wharf demo)
+
+Pick a demo route on the Parameters screen, or upload a QGroundControl `.plan`, GeoJSON, KML or GPX file. The run then adds a **Route corridor** stage between weather and the swarm:
+
+1. **Corridor mapping** (`server/route.py`, `server/mapdata.py`): OSM features for every map tile the route touches, rasterised to 20 m cells (building heights, people proxy, water, green areas, roads, sensitive sites). Ground robots are routed on OSM footways with Dijkstra; drones fly straight legs. Terrain comes from the Copernicus GLO-30 surface model. Airspace comes from openAIP.
+2. **Per-segment profile**: length, heading, obstacle clearance at cruise altitude, urban-canyon index, radio line-of-sight from the pad, population proxy and SORA 2.5 intrinsic GRC, airspace crossed, slope, surface and crossings.
+3. **Route-aware swarm**: every agent gets the segment table, and its physics tests fly the route with `wind_dir_deg` and `hour_of_day`.
+4. **Launch calendar plane** (`server/routesim.py`): x = day of the weather year, y = time of day. Each cell is a real departure flown along the corridor, with headwind/crosswind energy per leg, gusts amplified in urban canyons, lateral deviation versus corridor width, obstacle conflict, C2 link loss, plus pedestrian and office-occupancy profiles by hour.
+5. **Failure heat on the map**: each failed trial is attributed to a route segment. The report adds expected people struck per million flights (proxy), max intrinsic GRC and the airspace crossed.
+
+| Demo route | Platform | Length | Finding (mock-agent run) |
+|---|---|---|---|
+| Canary Wharf → Royal London Hospital (out & back) | drone | 7.8 km | 77.7% pass; inside London City CTR and EGR159 Isle of Dogs; 24% of the route is radio NLOS from the pad |
+| Isle of Dogs inspection loop | drone | 4.8 km | ~32% pass; obstacle conflict next to the South Quay towers dominates |
+| Canary Wharf stn → Crossharbour (out & back) | robot | 4.1 km on OSM footways | ~91% pass; 21 road crossings |
+| Canary Wharf → Mudchute Park | robot | 1.5 km | park paths and grass at the end |
+
+![Route corridor](docs/img/route_corridor.png)
+![Robot corridor](docs/img/route_robot.png)
+![Launch calendar](docs/img/route_calendar.png)
+
+> Population is a **proxy** (OSM building floor area × occupancy). The DEM is a surface model, so it includes buildings. openAIP data needs licence confirmation for commercial use. Map data © OpenStreetMap contributors (ODbL). Results are engineering evidence, not an airspace authorisation or a certified SORA.
+
 ## Roadmap
 
 Weather is the first environmental layer. The same agent → verify → grid → fix pipeline is designed to take more layers, each adding new dimensions to every cell and new tools for the swarm. **The items below are planned and not yet implemented.**
@@ -178,9 +201,9 @@ Weather is the first environmental layer. The same agent → verify → grid →
 |---|---|---|
 | **Now** | Weather year | Wind, gusts, shear, rain, snow, icing, heat, cold, pressure, humidity. *(shipped)* |
 | **Now** | LLM routing | Direct API or Mubit.ai proxy with adapter training on recurring agent tasks. *(shipped)* |
-| Next | Map routing | Real mission routes from OpenStreetMap / DEM terrain: headwind legs, elevation, return-to-home distance, energy along the path. |
-| Next | Human & obstacle avoidance | Pedestrian and vehicle density, crowd-over-flight risk, dynamic obstacles, perception range vs closing speed. |
-| Next | Airspace & geofencing | No-fly zones, altitude ceilings, controlled-airspace buffers, BVLOS corridors. |
+| **Now** | Mission routes (Phase 1) | Demo or uploaded QGroundControl `.plan` / GeoJSON / KML / GPX routes; OpenStreetMap buildings, trees, roads and water; Copernicus DEM; wind direction; per-leg headwind/crosswind energy and return reserve. *(shipped)* |
+| **Now** | People, airspace & geofence (Phase 2) | Population proxy under the corridor with SORA 2.5 intrinsic-GRC lookup, openAIP airspace intersection, corridor/geofence drift, obstacle conflict, C2 link loss; robots get pedestrian encounters, road crossings and localisation loss. *(shipped)* |
+| Next | Bring-your-own-test | Client YAML test cases with pass criteria, log-calibrated vehicle models (PX4 `.ulg`, ArduPilot `.bin`, ROS 2 MCAP). |
 | Later | GNSS / RF degradation | Urban canyon multipath, GPS denial, link loss and lost-link behaviour. |
 | Later | Component ageing | Battery cycle fade, motor wear, sensor drift over a fleet's service life. |
 | Later | Fleet operations | Multi-vehicle missions, charging logistics, fleet-level availability. |

@@ -10,7 +10,7 @@ timeline
     Shipped : Real weather year (wind, gusts, shear, rain, snow, icing, heat, cold)
             : Drone and ground-robot physics
             : Switchable LLM route (direct or Mubit.ai)
-    Next    : Map routing and terrain
+    Now     : Map routing and terrain (Phase 1)
             : Human and obstacle avoidance
             : Airspace and geofencing
     Later   : GNSS and RF degradation
@@ -32,21 +32,21 @@ timeline
 
 ## Next
 
-### Map routing and terrain
+### Map routing and terrain — shipped (Phase 1)
 - **Data:** OpenStreetMap road and building footprints, digital elevation models, user-drawn mission routes.
 - **Cell dimensions:** route length, elevation gain, headwind fraction per leg, distance to nearest safe landing or charging point.
 - **Physics:** energy integrated along the path rather than a fixed mission time; return-to-home margin under the worst leg.
 - **Agent tools:** `plan_route`, `worst_leg_for_wind`. Specialists: route energy auditor, return-to-home planner.
 - **Fixes:** route re-planning, waypoint insertion, reserve policy changes.
 
-### Human and obstacle avoidance
+### Human and obstacle avoidance — shipped as Phase 2 proxy
 - **Data:** population density, pedestrian and vehicle traffic profiles by hour, static obstacles (trees, poles, wires).
 - **Cell dimensions:** people per km², dynamic obstacle density, closing speed, visibility.
 - **Physics:** perception range vs stopping distance, detection probability in rain, fog and low light, over-flight risk.
 - **Agent tools:** `crowd_exposure`, `perception_check`. Specialists: crowd-safety analyst, night-perception tester.
 - **Fixes:** sensor upgrades, speed caps in dense zones, corridor offsets.
 
-### Airspace and geofencing
+### Airspace and geofencing — shipped (Phase 2)
 - **Data:** no-fly zones, controlled airspace, altitude ceilings, temporary restrictions.
 - **Physics:** geofence breach probability under gusts and GNSS error; altitude-ceiling conflicts with terrain.
 - **Fixes:** corridor margins, altitude-hold tuning, alternative routes.

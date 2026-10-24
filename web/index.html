@@ -12,8 +12,8 @@
 <header class="topbar">
   <div class="brand"><span class="logo"></span><b>SWARM</b>&nbsp;PROVING GROUND</div>
   <ol class="stepper" id="stepper">
-    <li data-step="select">1 · Platform</li><li data-step="config">2 · Parameters</li>
-    <li data-step="swarm">3 · Agent swarm</li><li data-step="plane">4 · Proving ground</li>
+    <li data-step="select">1 · Platform</li><li data-step="config">2 · Parameters</li><li data-step="route">3 · Route corridor</li>
+    <li data-step="swarm">4 · Agent swarm</li><li data-step="plane">5 · Proving ground</li>
   </ol>
   <div class="badge" id="backend-badge">…</div>
 </header>
@@ -45,6 +45,12 @@
         <h3>Test site — last 12 months of real hourly weather</h3>
         <div class="chips" id="locations"></div>
         <div class="row">
+          <label>Mission route <small style="display:block;font-size:11px">OpenStreetMap corridor · airspace · people</small></label>
+          <div class="chips" id="route-chips"></div>
+          <input type="file" id="route-file" accept=".plan,.geojson,.json,.kml,.gpx" style="display:none">
+        </div>
+        <div class="row"><label></label><div class="route-note" id="route-note"></div></div>
+        <div class="row">
           <label>Swarm size <b id="agents-val">24</b> agents</label>
           <input type="range" id="agents" min="8" max="30" value="24">
         </div>
@@ -59,6 +65,13 @@
         <button class="launch" id="launch">Launch agent swarm</button>
       </div>
     </div>
+  </section>
+
+  <!-- 2b. route corridor -->
+  <section class="screen" id="screen-route">
+    <canvas id="routemap"></canvas>
+    <div class="route-status" id="route-status">Mapping corridor…</div>
+    <aside class="panel route-side" id="route-side"></aside>
   </section>
 
   <!-- 3. swarm -->
@@ -90,6 +103,7 @@
     <div class="hud-right panel" id="inspector"></div>
     <div class="hud-bottom" id="hud-bottom"></div>
     <canvas id="minimap" width="180" height="180"></canvas>
+    <div class="panel corridor" id="corridor-box"><div class="cb-h">Route failure heat · <span id="cb-name"></span></div><canvas id="corridor"></canvas></div>
     <div class="overlay" id="plane-overlay"><div class="ov-inner"><div class="ov-k" id="ov-k">PHASE 2</div><div class="ov-t" id="ov-t">Building the proving ground</div><div class="ov-s" id="ov-s"></div></div></div>
     <div class="report panel" id="report"></div>
     <button class="rep-open" id="rep-open">▲ Show report & fixes</button>

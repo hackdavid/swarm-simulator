@@ -17,6 +17,9 @@ DRONE_FIXES = {
     "prop_icing": ("Heated / hydrophobic-coated propellers", lambda p: {"prop_ice_protection": True}),
     "thermal": ("Upgrade ESC cooling (+8 °C operating limit)", lambda p: {"op_temp_max": p["op_temp_max"] + 8}),
     "nav_loss": ("Add RTK GPS + obstacle avoidance", lambda p: {"rtk_gps": True, "obstacle_avoidance": True}),
+    "obstacle_conflict": ("RTK GPS + obstacle avoidance, re-plan legs for 25 m clearance", lambda p: {"rtk_gps": True, "obstacle_avoidance": True}),
+    "geofence_breach": ("RTK GPS + adaptive controller (tighter tracking)", lambda p: {"rtk_gps": True, "flight_controller": "adaptive"}),
+    "link_loss": ("Add 4G/LTE backup C2 link", lambda p: {"lte_backup_link": True}),
     "overload": ("Cap payload at 85% of rated / stronger motors", lambda p: {"max_thrust_per_motor_kg": p["max_thrust_per_motor_kg"] * 1.15, "max_payload_kg": p["max_payload_kg"] * 1.25}),
 }
 
@@ -30,6 +33,9 @@ ROBOT_FIXES = {
     "water_ingress": ("Seal two IP levels higher", _ip_up),
     "thermal": ("Upgrade motor cooling (+8 °C)", lambda p: {"op_temp_max": p["op_temp_max"] + 8}),
     "perception_loss": ("Add LiDAR + thermal camera", lambda p: {"lidar": True, "thermal_camera": True}),
+    "pedestrian_conflict": ("Add 3D LiDAR + thermal camera, cap sidewalk speed at 1.4 m/s", lambda p: {"lidar": True, "thermal_camera": True, "max_speed_ms": min(p["max_speed_ms"], 1.4)}),
+    "crossing_failure": ("Traction control + thermal camera for night crossings", lambda p: {"traction_control": True, "thermal_camera": True}),
+    "localisation_loss": ("Add 3D LiDAR SLAM (GNSS-independent localisation)", lambda p: {"lidar": True}),
     "obstacle_strike": ("Larger wheels (+35%)", lambda p: {"wheel_diameter_cm": p["wheel_diameter_cm"] * 1.35}),
 }
 

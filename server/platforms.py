@@ -40,6 +40,8 @@ DRONE_PARAMS = [
     _r("payload_kg", "Mission payload (weight it carries)", "Mission", 1.2, 0, 30, 0.1, "kg"),
     _r("mission_minutes", "Mission duration", "Mission", 18, 2, 90, 1, "min"),
     _r("cruise_altitude_m", "Cruise altitude AGL", "Mission", 120, 10, 500, 10, "m"),
+    _r("corridor_m", "Route corridor half-width", "Mission", 30, 5, 200, 5, "m", "Geofence tolerance either side of the planned route."),
+    _b("lte_backup_link", "4G/LTE backup C2 link", "Sensors", False, "Keeps command & control when radio line-of-sight is blocked."),
 ]
 
 ROBOT_PARAMS = [
