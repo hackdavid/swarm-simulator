@@ -2,6 +2,7 @@ import { renderParams, renderDerived, vehicleLoop, pickArt } from './config.js';
 import { SwarmView } from './swarm.js';
 import { PlaneView } from './plane.js';
 import { MapView } from './map.js';
+import { City3D } from './city3d.js';
 
 const $ = (s) => document.querySelector(s);
 const S = { meta: null, platform: 'drone', values: {}, location: 'london', run: null, ws: null, route: null, routes: [], routeData: null };
@@ -91,6 +92,9 @@ async function boot() {
   $('#agents').oninput = () => { $('#agents-val').textContent = $('#agents').value; $('#agents').style.setProperty('--p', `${100 * ($('#agents').value - 8) / 22}%`); $('#launch').textContent = `Launch ${$('#agents').value}-agent swarm`; };
   $('#agents').oninput();
   $('#launch').onclick = launch;
+  const city = new City3D($('#city3d')); window.SPG_CITY = city;
+  document.addEventListener('click', (ev) => { if (ev.target.id === 'fly3d' && plane.sel?.data) city.open(S.run.id, plane.sel.data.x, plane.sel.data.y, S.routeData, [100 * ev.clientX / innerWidth, 100 * ev.clientY / innerHeight]); });
+  addEventListener('keydown', (ev) => { if (ev.key === 'Escape') city.close(); });
   map = new MapView($('#routemap')); mini = new MapView($('#corridor'), { interactive: false, mini: true });
   $('#corridor-box').onclick = () => S.routeData && show('route');
   S.routes = (await (await fetch('/api/routes')).json()).routes;

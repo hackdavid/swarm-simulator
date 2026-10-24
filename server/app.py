@@ -226,6 +226,80 @@ class Run:
                 "margins": {k: (round(v, 2) if isinstance(v, float) else v) for k, v in margins.items()},
                 "case": case, "when": self._when(x, y)}
 
+    def replay(self, x, y):
+        """Per-trial 3D trajectories for one route cell (stochastic replay of the reduced-order model)."""
+        if self.env is None or not self.prof:
+            raise HTTPException(409, "replay needs a route run with a built grid")
+        x, y = int(np.clip(x, 0, self.S - 1)), int(np.clip(y, 0, self.S - 1))
+        e = {k: v[y, x:x + 1] for k, v in self.env.items()}
+        mode = self.trials(self.params, e, 64, np.random.default_rng(y * 100003 + x), detail=True)[0][0]
+        rows = RS._rows(self.platform, self.params, e, self.prof)
+        sm, segs, drone = self.prof["samples"], self.prof["segments"], self.platform == "drone"
+        la, lo, dd, sg = (np.asarray(sm[k], float) for k in ("lat", "lon", "d", "seg"))
+        idx = np.unique(np.linspace(0, len(la) - 1, min(len(la), 160)).astype(int))
+        la, lo, dd, sg = la[idx], lo[idx], dd[idx], sg[idx].astype(int)
+        kx = 111320 * np.cos(np.radians(la.mean()))
+        tx, ty = np.gradient((lo - lo[0]) * kx), np.gradient((la - la[0]) * 111320)
+        nn = np.hypot(tx, ty) + 1e-9
+        nx, ny = -ty / nn, tx / nn
+        alt = float(self.prof["alt_m"]) if drone else 0.6
+        wd, w, g = float(e["wdir"][0]) if "wdir" in e else 240.0, float(e["wind"][0]), float(e["gust"][0])
+        we, wn = -np.sin(np.radians(wd)) * w, -np.cos(np.radians(wd)) * w
+        cross = we * nx + wn * ny
+        dev = float(rows["deviation_m"][0]) if drone else 0.5
+        T = float(rows["mission_min"][0]) * 60 if drone else dd[-1] / 1.4
+        t = dd / max(dd[-1], 1) * T
+        ramp = np.clip(np.minimum(dd, dd[-1] - dd) / 150, 0, 1) if drone else np.ones(len(dd))
+        segL = np.array([sx["length_m"] for sx in segs], float)
+        nl = np.array([sx["nlos"] for sx in segs], float) * segL
+        cr = np.array([sx["crossings"] for sx in segs], float)
+        names = {m["id"]: m["name"] for m in MODES[self.platform]}
+        corridor = float(self.params.get("corridor_m", 30))
+        rng = np.random.default_rng(x * 7919 + y)
+        trials = []
+        for k in range(64):
+            m = int(mode[k])
+            a, z = np.zeros(len(la)), np.zeros(len(la))
+            for i in range(1, len(la)):
+                a[i] = 0.9 * a[i - 1] + rng.normal(0, dev * 0.45) + 0.012 * cross[i] * dev
+                z[i] = 0.85 * z[i - 1] + rng.normal(0, 0.35 * g if drone else 0.0)
+            fi = None
+            if m:
+                if drone and m == 11:
+                    s = int(rows["obstacle_seg"][0])
+                elif drone and m == 13 and nl.sum() > 0:
+                    s = int(rng.choice(len(segs), p=nl / nl.sum()))
+                elif drone and m == 4:
+                    s = int(min(len(segs) - 1, len(segs) * (0.75 + 0.25 * rng.random())))
+                elif not drone and m == 12 and cr.sum() > 0:
+                    s = int(rng.choice(len(segs), p=cr / cr.sum()))
+                else:
+                    s = int(rng.choice(len(segs), p=segL / segL.sum()))
+                cand = np.nonzero(sg == s)[0]
+                fi = int(rng.choice(cand)) if len(cand) else int(rng.integers(1, len(la)))
+                if drone and m == 12:
+                    a[:fi + 1] += np.linspace(0, 1, fi + 1) ** 3 * (np.sign(a[fi] or 1) * corridor * 1.4 - a[fi])
+            za = np.maximum(alt * ramp + z * ramp, 0.3) if drone else np.full(len(la), alt)
+            lat_p, lon_p = la + ny * a / 111320, lo + nx * a / kx
+            n = len(la) if fi is None else fi + 1
+            pts = [[round(float(lon_p[i]), 7), round(float(lat_p[i]), 7), round(float(za[i]), 1)] for i in range(n)]
+            ts = [round(float(t[i]), 1) for i in range(n)]
+            if fi is not None and drone:
+                for j in range(1, 7):
+                    pts.append([round(float(lon_p[fi] + we * 1.5 * j / kx), 7), round(float(lat_p[fi] + wn * 1.5 * j / 111320), 7), round(float(za[fi] * (1 - (j / 6) ** 2)), 1)])
+                    ts.append(round(float(t[fi] + 1.5 * j), 1))
+            trials.append({"pass": m == 0, "mode": m, "name": names.get(m, "pass"), "fail_i": fi,
+                           "fail_d": round(float(dd[fi]), 1) if fi is not None else None, "path": pts, "t": ts})
+        hour = y * 24 / self.S
+        doy = int(x * (len(self.weather["wind"]) // 24) // self.S)
+        night = float(RS.solar_night(np.array([doy]), hour, float(la[0]), float(lo[0]))[0])
+        sv = lambda key: [round(float(segs[i][key]), 1) for i in sg]
+        return {"when": self._when(x, y), "x": x, "y": y, "platform": self.platform, "alt_m": alt, "corridor_m": corridor,
+                "env": {k: round(float(v[0]), 2) for k, v in e.items()}, "hour": hour, "night": night, "T": round(float(T), 1),
+                "d": [round(float(v), 1) for v in dd], "t": [round(float(v), 1) for v in t],
+                "clear": sv("clearance_m"), "obst": sv("max_obstacle_m"), "nlos": sv("nlos"), "people": sv("people_per_km2"),
+                "trials": trials, "passed": int(sum(tr["pass"] for tr in trials))}
+
     def trials(self, p, e, K, rng, detail=False):
         if self.prof:
             return RS.route_trials(self.platform, p, e, K, rng, self.prof, detail)
@@ -314,6 +388,14 @@ def get_cell(rid: str, x: int, y: int):
     if not run:
         raise HTTPException(404)
     return run.cell(x, y)
+
+
+@app.get("/api/runs/{rid}/replay")
+def get_replay(rid: str, x: int, y: int):
+    run = RUNS.get(rid)
+    if not run:
+        raise HTTPException(404)
+    return run.replay(x, y)
 
 
 @app.websocket("/ws/runs/{rid}")

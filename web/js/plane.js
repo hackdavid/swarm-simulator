@@ -115,7 +115,7 @@ export class PlaneView {
     const env = Object.entries(d.env).map(([k, v]) => `<span>${k.replace('_', ' ')}</span><b>${v}${unit[k] ? ' ' + unit[k] : ''}</b>`).join('');
     const mg = Object.entries(d.margins).map(([k, v]) => `<span>${k.replaceAll('_', ' ')}</span><b>${v}</b>`).join('');
     const hist = Object.entries(d.histogram).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<span>${esc(k)}</span><b style="color:#ff3b6b">${v}/${d.trials}</b>`).join('');
-    this.insp.innerHTML = `<button class="close" id="insp-x">✕</button><h3>Cell #${d.id.toLocaleString()} · (${d.x}, ${d.y})</h3>${d.when ? `<div class="insp-when">Departure ${esc(d.when)} · flown along the route</div>` : ''}
+    this.insp.innerHTML = `<button class="close" id="insp-x">✕</button><h3>Cell #${d.id.toLocaleString()} · (${d.x}, ${d.y})</h3>${d.when ? `<div class="insp-when">Departure ${esc(d.when)} · flown along the route</div><button class="fly3d" id="fly3d">▶ Fly this cell in the 3D city</button>` : ''}
       <div class="insp-h"><span class="pp" style="color:${col}">${pct}%</span><div><div style="font-weight:700">${pct >= 80 ? 'PASS' : 'FAIL'} · ${d.category.name}</div><div style="font-size:11px;color:#8796b0">${d.pass}/${d.trials} Monte-Carlo ${this.platform === 'drone' ? 'flights' : 'missions'} survived${d.dominant ? ' · ' + esc(d.dominant.name) : ''}</div></div></div>
       <canvas id="insp-scene" width="680" height="380" style="width:100%;border-radius:10px;margin:10px 0 4px"></canvas>
       <div style="font-size:10.5px;color:#8796b0" id="insp-trial"></div>
