@@ -19,6 +19,7 @@ export class City3D {
     this.R = await r.json(); this.drone = this.R.platform === 'drone';
     if (route !== this.route) { this.route = route; this.prep(route); }
     this.k = Math.max(0, this.R.trials.findIndex(t => !t.pass)); this.t = 0; this.end = this.R.T;
+    const res = this.root.querySelector('#c3-result'); res.classList.remove('show'); delete res.dataset.k;
     this.particles(); this.sky(); this.hud();
     const target = this.drone ? { ...this.c, zoom: 15.2, pitch: 58, bearing: -25 } : { ...this.c, zoom: 16.2, pitch: 55, bearing: -20 };
     const fx = new D.LightingEffect({ amb: new D.AmbientLight({ color: [255, 255, 255], intensity: this.R.night ? 0.55 : 1.0 }),
