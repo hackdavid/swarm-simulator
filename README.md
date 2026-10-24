@@ -17,9 +17,9 @@ Their verified findings seed a zoomable proving ground of more than one million 
 ![OpenStreetMap](https://img.shields.io/badge/Map-OpenStreetMap-7EBC6F?logo=openstreetmap&logoColor=white)
 ![Open-Meteo](https://img.shields.io/badge/Weather-Open--Meteo%20ERA5-f59e0b)
 
-<a href="docs/media/demo.mp4"><img src="docs/media/preview.gif" alt="Swarm Proving Ground: 3D replay of a Canary Wharf delivery route" width="860"/></a>
+<a href="https://www.youtube.com/watch?v=YUvj0v6jV14"><img src="docs/media/preview.gif" alt="Swarm Proving Ground: 3D replay of a Canary Wharf delivery route" width="860"/></a>
 
-**[▶ Watch the 2-minute narrated demo](docs/media/demo.mp4)** · [Architecture](docs/ARCHITECTURE.md) · [Workflow](docs/WORKFLOW.md) · [Roadmap](docs/ROADMAP.md)
+**[▶ Watch the 2-minute narrated demo on YouTube](https://www.youtube.com/watch?v=YUvj0v6jV14)** ([MP4](docs/media/demo.mp4)) · [Architecture](docs/ARCHITECTURE.md) · [Workflow](docs/WORKFLOW.md) · [Roadmap](docs/ROADMAP.md)
 
 | 24 | 8,760 | 1,048,576 | 16.8M | 64 |
 |:---:|:---:|:---:|:---:|:---:|
@@ -28,6 +28,15 @@ Their verified findings seed a zoomable proving ground of more than one million 
 </div>
 
 ---
+<div align="center">
+  <a href="https://www.youtube.com/watch?v=YUvj0v6jV14">
+    <img src="https://img.youtube.com/vi/YUvj0v6jV14/maxresdefault.jpg" alt="Watch Demo Video" width="100%" style="max-width:700px; border-radius: 8px 8px 0 0;">
+  </a>
+  <br/>
+  <a href="https://www.youtube.com/watch?v=YUvj0v6jV14">
+    <img src="https://img.shields.io/badge/▶%20Watch%20Full%20Video-FF0000?style=for-the-badge&logo=youtube&logoColor=white" alt="Watch on YouTube">
+  </a>
+</div>
 
 ## Why it exists
 
