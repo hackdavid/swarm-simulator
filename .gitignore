@@ -5,3 +5,4 @@ data/weather_cache/
 *.mp4
 *.webm
 data/bench/
+data/map_cache/

@@ -115,7 +115,7 @@ export class PlaneView {
     const env = Object.entries(d.env).map(([k, v]) => `<span>${k.replace('_', ' ')}</span><b>${v}${unit[k] ? ' ' + unit[k] : ''}</b>`).join('');
     const mg = Object.entries(d.margins).map(([k, v]) => `<span>${k.replaceAll('_', ' ')}</span><b>${v}</b>`).join('');
     const hist = Object.entries(d.histogram).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<span>${esc(k)}</span><b style="color:#ff3b6b">${v}/${d.trials}</b>`).join('');
-    this.insp.innerHTML = `<button class="close" id="insp-x">✕</button><h3>Cell #${d.id.toLocaleString()} · (${d.x}, ${d.y})</h3>
+    this.insp.innerHTML = `<button class="close" id="insp-x">✕</button><h3>Cell #${d.id.toLocaleString()} · (${d.x}, ${d.y})</h3>${d.when ? `<div class="insp-when">Departure ${esc(d.when)} · flown along the route</div><button class="fly3d" id="fly3d">▶ Fly this cell in the 3D city</button>` : ''}
       <div class="insp-h"><span class="pp" style="color:${col}">${pct}%</span><div><div style="font-weight:700">${pct >= 80 ? 'PASS' : 'FAIL'} · ${d.category.name}</div><div style="font-size:11px;color:#8796b0">${d.pass}/${d.trials} Monte-Carlo ${this.platform === 'drone' ? 'flights' : 'missions'} survived${d.dominant ? ' · ' + esc(d.dominant.name) : ''}</div></div></div>
       <canvas id="insp-scene" width="680" height="380" style="width:100%;border-radius:10px;margin:10px 0 4px"></canvas>
       <div style="font-size:10.5px;color:#8796b0" id="insp-trial"></div>
@@ -124,6 +124,20 @@ export class PlaneView {
       ${d.case ? `<h3>Agent finding</h3><div class="case"><div class="ct">${esc(d.case.title)}</div><div class="ca">${esc(d.case.agent)}</div><div class="cm">${esc(d.case.mechanism)}</div></div>` : ''}`;
     this.insp.classList.add('show'); document.getElementById('insp-x').onclick = () => { this.insp.classList.remove('show'); this.sel = null; };
   }
+  when(x, y) {
+    const c = this.meta?.calendar; if (!c) return '';
+    const d = new Date(Date.parse(c.start + 'T00:00:00Z') + Math.floor(x * c.days / this.S) * 864e5), h = y * 24 / this.S;
+    return `${d.toUTCString().slice(0, 11)} ${String(Math.floor(h)).padStart(2, '0')}:${String(Math.floor((h % 1) * 60)).padStart(2, '0')} UTC · `;
+  }
+  drawCalendar(ctx, W, H, sx, sy) {
+    const c = this.meta?.calendar; if (!c) return;
+    ctx.font = '600 10px JetBrains Mono'; ctx.fillStyle = 'rgba(160,180,215,.75)'; ctx.textAlign = 'center';
+    const t0 = Date.parse(c.start + 'T00:00:00Z'), top = Math.max(sy(0) - 8, 176);
+    for (let m = 0; m < 13; m++) { const d = new Date(t0); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() + m); const day = (d - t0) / 864e5; if (day < 0 || day > c.days) continue;
+      const X = sx(day * this.S / c.days); if (X < 320 || X > W - 20) continue; ctx.fillText(d.toUTCString().slice(8, 11).toUpperCase(), X, top); }
+    ctx.textAlign = 'right'; const L = Math.max(sx(0) - 6, 360);
+    for (let h = 0; h <= 24; h += 3) { const Y = sy(h * this.S / 24); if (Y < 30 || Y > H - 10) continue; ctx.fillText(`${String(h).padStart(2, '0')}:00`, L, Y + 3); }
+  }
   addFix(f) { this.fixes.push(f); }
   report(r, onApply) {
     this.doneAt = (performance.now() - this.tStart) / 1000;
@@ -131,6 +145,7 @@ export class PlaneView {
     el.innerHTML = `<button class="close" id="rep-x">✕</button><h3>Proving-ground report · ${r.elapsed_s}s end-to-end</h3>
       <div style="display:flex;gap:10px;margin-bottom:10px">${[[this.meta.size ** 2, 'environments'], [p.flights, 'Monte-Carlo sims'], [r.cases, 'agent-verified cases'], [r.pass_rate + '%', 'baseline pass'], [r.combined_after + '%', 'with all fixes']]
         .map(([a, b], i) => `<div class="kpi" style="min-width:0;flex:1"><b style="font-size:19px;${i === 4 ? 'color:#3bf28a' : ''}">${typeof a === 'number' ? a.toLocaleString() : a}</b><span>${b}</span></div>`).join('')}</div>
+      ${r.route_risk ? `<div class="rr"><div><b>${r.route_risk.per_million_flights.toLocaleString()}</b><span>expected people struck per million ${this.platform === 'drone' ? 'flights' : 'missions'} (proxy)</span></div><div><b>${r.route_risk.max_igrc}</b><span>max intrinsic GRC</span></div><div class="rr-a">${r.route_risk.airspace.map(esc).join('<br>') || 'no controlled airspace'}</div></div>` : ''}
       ${r.fixes.map(f => `<div class="fx"><div><i style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${f.color};margin-right:6px"></i>${esc(f.mode)}</div><div style="color:#b7c1d6">${esc(f.fix)}</div><div class="d">${f.pass_before}% → <b>${f.pass_after}%</b></div></div>`).join('')}
       <div style="display:flex;gap:10px;margin-top:12px"><button class="launch" id="apply-fixes" style="margin:0;padding:11px;font-size:14px">Apply all fixes & re-run the swarm</button></div>
       <div style="font-size:10.5px;color:#61708c;margin-top:8px">Fix impact measured by re-simulating 65,536 sampled cells × 8 trials. Simulation findings, not certification.</div>`;
@@ -183,8 +198,9 @@ export class PlaneView {
     // bottom bar
     const hb = document.getElementById('hud-bottom');
     let txt = `zoom ×${z.toFixed(z < 10 ? 2 : 0)} · ${((x1 - x0 + 1) * (y1 - y0 + 1)).toLocaleString()} cells in view · scroll to zoom, drag to pan, click a cell`;
-    if (this.hover) { const i = this.hover.y * this.S + this.hover.x; if (this.tested[i]) { const e = this.envAt(i); txt = `(${this.hover.x}, ${this.hover.y}) ${this.meta.categories[this.cat[i]].name} · wind ${e.wind.toFixed(1)} gust ${e.gust.toFixed(1)} m/s · rain ${e.rain.toFixed(1)} mm/h · ${e.temp.toFixed(0)}°C · ${Math.round(100 * this.pass[i] / this.K)}% pass`; } }
+    if (this.hover) { const i = this.hover.y * this.S + this.hover.x; if (this.tested[i]) { const e = this.envAt(i); txt = `${this.when(this.hover.x, this.hover.y)}(${this.hover.x}, ${this.hover.y}) ${this.meta.categories[this.cat[i]].name} · wind ${e.wind.toFixed(1)} gust ${e.gust.toFixed(1)} m/s · rain ${e.rain.toFixed(1)} mm/h · ${e.temp.toFixed(0)}°C · ${Math.round(100 * this.pass[i] / this.K)}% pass`; } }
     if (hb.textContent !== txt) hb.textContent = txt;
+    this.drawCalendar(ctx, W, H, sx, sy);
     // minimap
     if (!this._mmT || ts - this._mmT > 120) { this._mmT = ts; const m = this.mctx, M = this.mm.width; m.imageSmoothingEnabled = true; m.drawImage(this.off, 0, 0, M, M);
       const k = M / this.S; m.strokeStyle = '#4cf2c6'; m.lineWidth = 1.5; m.strokeRect((x - W / 2 / z) * k, (y - H / 2 / z) * k, W / z * k, H / z * k); }

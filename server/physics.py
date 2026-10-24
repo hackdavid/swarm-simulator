@@ -23,6 +23,9 @@ DRONE_MODES = [
     {"id": 8, "key": "thermal", "name": "Thermal shutdown", "color": "#f94144"},
     {"id": 9, "key": "nav_loss", "name": "Navigation / vision loss", "color": "#adb5bd"},
     {"id": 10, "key": "overload", "name": "Overload — cannot climb", "color": "#9d4edd"},
+    {"id": 11, "key": "obstacle_conflict", "name": "Obstacle conflict (building / tree)", "color": "#ff006e"},
+    {"id": 12, "key": "geofence_breach", "name": "Geofence / corridor breach", "color": "#fb5607"},
+    {"id": 13, "key": "link_loss", "name": "C2 link loss → lost-link failure", "color": "#8ecae6"},
 ]
 
 ROBOT_MODES = [
@@ -36,6 +39,9 @@ ROBOT_MODES = [
     {"id": 8, "key": "thermal", "name": "Thermal shutdown", "color": "#f94144"},
     {"id": 9, "key": "perception_loss", "name": "Perception loss (fog/rain)", "color": "#adb5bd"},
     {"id": 10, "key": "obstacle_strike", "name": "Obstacle strike / high-centre", "color": "#9d4edd"},
+    {"id": 11, "key": "pedestrian_conflict", "name": "Pedestrian conflict (cannot stop in time)", "color": "#ff006e"},
+    {"id": 12, "key": "crossing_failure", "name": "Road crossing / kerb failure", "color": "#fb5607"},
+    {"id": 13, "key": "localisation_loss", "name": "Localisation loss (urban canyon)", "color": "#8ecae6"},
 ]
 
 MODES = {"drone": DRONE_MODES, "robot": ROBOT_MODES}
@@ -104,7 +110,7 @@ def drone_trials(p: dict, env: dict, K: int, rng: np.random.Generator, detail=Fa
     p_hover = W ** 1.5 / np.sqrt(2 * rho * disc) / 0.62
     p_mission = p_hover * (1 + 0.025 * wind + 0.0025 * wind ** 2) * (1 + 0.1 * (rain > 2)) + 15
     endurance = usable / p_mission * 60
-    need = p["mission_minutes"] * (1 + p["reserve_pct"] / 100)
+    need = _c(env["mission_min"]) * (1 + p["reserve_pct"] / 100) if "mission_min" in env else p["mission_minutes"] * (1 + p["reserve_pct"] / 100)
     f_batt = endurance < need
     cold_limit = p["op_temp_min"] - (8 if p["battery_heater"] else 0)
     f_cold = (f_batt & (bf < 0.88)) | (T < cold_limit)
@@ -128,7 +134,7 @@ def drone_trials(p: dict, env: dict, K: int, rng: np.random.Generator, detail=Fa
         "airspeed_limit_ms": 0.75 * p["max_airspeed_ms"],
         "thrust_required_pct": float(np.mean(req / tmax) * 100),
         "endurance_min": float(np.mean(endurance)),
-        "endurance_needed_min": need,
+        "endurance_needed_min": float(np.mean(need)),
         "battery_derate_pct": float((1 - np.mean(bf)) * 100),
         "rain_tolerance_mmh": ip_tol,
         "air_density": float(np.mean(rho)),
@@ -165,7 +171,7 @@ def robot_trials(p: dict, env: dict, K: int, rng: np.random.Generator, detail=Fa
     f_bog = (mud + 0.6 * sdepth) * (1 + 0.15 * rng.standard_normal(n)) > clearance
     bf = _battery_factor(p, T)
     usable = p["battery_wh"] * 0.9 * bf * (1 + 0.04 * rng.standard_normal(n))
-    dist = p["mission_km"] * 1000
+    dist = _c(env["mission_km"]) * 1000 if "mission_km" in env else p["mission_km"] * 1000
     speed = p["max_speed_ms"] * 0.7 / (1 + 2 * crr)
     hours = dist / np.maximum(speed, 0.05) / 3600
     energy = W * (crr * np.cos(slope) + 0.5 * np.sin(slope)) * dist / LOCO_EFF[loco] / 3600 + 45 * hours
