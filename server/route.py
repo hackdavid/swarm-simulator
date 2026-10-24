@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import heapq
 import json
+import asyncio
 import math
 import re
 import xml.etree.ElementTree as ET
@@ -14,6 +15,7 @@ import xml.etree.ElementTree as ET
 import numpy as np
 
 from . import mapdata as M
+from . import planner as PL
 
 DEMO_ROUTES = [
     {"id": "cw-hospital", "platform": "drone", "name": "Canary Wharf → Royal London Hospital",
@@ -196,9 +198,34 @@ async def build_profile(route: dict, platform: str, params: dict, emit=None) -> 
     s, n = min(t[0] for t in tiles) * M.TILE_DEG, (max(t[0] for t in tiles) + 1) * M.TILE_DEG
     w, e = min(t[1] for t in tiles) * M.TILE_DEG, (max(t[1] for t in tiles) + 1) * M.TILE_DEG
     feats = await M.osm_features(s, w, n, e, tiles)
-    edge_attr = None
+    R = M.rasterise(feats, s, w, n, e, 20.0)
+    zones = await M.airspace("gb") if 49 < np.mean(lats0) < 61 and -9 < np.mean(lons0) < 2.5 else []
+    edge_attr, alts, plan = None, None, None
     path = wps
     routed = "straight legs between waypoints"
+    if platform == "drone" and params.get("avoid_obstacles", True):
+        max_alt = float(params.get("max_altitude_m", 120))
+        gi, gj = np.mgrid[0:R["ny"], 0:R["nx"]]
+        glat = (s + (gi + 0.5) * R["cell_m"] / M.M_PER_DEG).ravel()
+        glon = (w + (gj + 0.5) * R["cell_m"] / (M.M_PER_DEG * math.cos(math.radians(s)))).ravel()
+        nofly = np.zeros(R["ny"] * R["nx"], bool)
+        for z in zones:
+            if z["type"] in ("Restricted", "Prohibited", "Danger") and z["lower_m"] <= max_alt:
+                nofly |= M.point_in_ring(glat, glon, z["ring"])
+        if emit:
+            await emit({"type": "route_progress", "text": "Planning a 3D obstacle-avoiding route (A* over building heights + restricted airspace)"})
+        P = PL.Planner(R["hmax"], s, w, R["cell_m"], alt, max_alt, nofly.reshape(R["ny"], R["nx"]), lat_buf_m=float(params.get("obstacle_buffer_m", 30)))
+        verts, ok = await asyncio.to_thread(P.plan, wps)
+        Ld = sum(_hav(p[0], p[1], q[0], q[1]) for p, q in zip(wps, wps[1:]))
+        Lp = sum(_hav(p[0], p[1], q[0], q[1]) for p, q in zip(verts, verts[1:]))
+        plan = {"ok": ok, "direct_m": round(Ld), "planned_m": round(Lp), "detour_pct": round(100 * (Lp / max(Ld, 1) - 1), 1),
+                "max_alt_m": max(v[2] for v in verts), "turns": len(verts) - 2, "ceiling_m": max_alt,
+                "buffer_m": float(params.get("obstacle_buffer_m", 30)),
+                "direct": P.line_stats([(a, o, alt) for a, o in wps], lambda z1, z2: alt),
+                "planned": P.line_stats(verts, lambda z1, z2: max(z1, z2))}
+        path, alts = [(a, o) for a, o, _ in verts], [z for _, _, z in verts]
+        routed = "3D A* obstacle-avoiding route (around/over buildings, restricted airspace penalised)" if ok else \
+            "straight legs (planner found no clear path inside the corridor)"
     if platform == "robot" and feats.get("roads"):
         r = _walk_route(feats, wps, params.get("locomotion", "wheeled") == "wheeled")
         if r:
@@ -209,12 +236,13 @@ async def build_profile(route: dict, platform: str, params: dict, emit=None) -> 
         if edge_attr is not None:
             edge_attr = edge_attr + edge_attr[::-1]
         path = path + back[1:]
+        if alts:
+            alts = alts + alts[::-1][1:]
     if emit:
         await emit({"type": "route_progress", "text": "Rasterising buildings, people, water and roads (20 m cells)"})
-    R = M.rasterise(feats, s, w, n, e, 20.0)
     # resample every ~15 m
     step = 15.0
-    la, lo, dd, hd, ea = [], [], [], [], []
+    la, lo, dd, hd, ea, za = [], [], [], [], [], []
     tot = 0.0
     for k, ((a1, o1), (a2, o2)) in enumerate(zip(path, path[1:])):
         L = _hav(a1, o1, a2, o2)
@@ -222,10 +250,12 @@ async def build_profile(route: dict, platform: str, params: dict, emit=None) -> 
         nk = max(1, int(L / step))
         for t in np.arange(nk) / nk:
             la.append(a1 + t * (a2 - a1)); lo.append(o1 + t * (o2 - o1)); dd.append(tot + t * L); hd.append(hdg)
+            za.append(alts[k] + t * (alts[k + 1] - alts[k]) if alts else alt)
             ea.append(edge_attr[k] if edge_attr else None)
         tot += L
     la.append(path[-1][0]); lo.append(path[-1][1]); dd.append(tot); hd.append(hd[-1] if hd else 0); ea.append(ea[-1] if ea else None)
-    la, lo, dd, hd = map(np.array, (la, lo, dd, hd))
+    za.append(alts[-1] if alts else alt)
+    la, lo, dd, hd, za = map(np.array, (la, lo, dd, hd, za))
     cm = R["cell_m"]
     ci = np.clip(((la - s) * M.M_PER_DEG / cm).astype(int), 0, R["ny"] - 1)
     cj = np.clip(((lo - w) * M.M_PER_DEG * math.cos(math.radians(s)) / cm).astype(int), 0, R["nx"] - 1)
@@ -237,16 +267,14 @@ async def build_profile(route: dict, platform: str, params: dict, emit=None) -> 
     if emit:
         await emit({"type": "route_progress", "text": "Sampling terrain (Copernicus DEM) and airspace (openAIP)"})
     elev, dem_src = await M.elevation(la, lo)
-    zones = await M.airspace("gb") if 49 < la.mean() < 61 and -9 < lo.mean() < 2.5 else []
     # obstacle clearance: distance to the nearest cell taller than cruise altitude - 10 m (drone) / kerb-level for robot
-    tall = hmax > (alt - 10) if platform == "drone" else np.zeros_like(hmax, bool)
-    ty, tx = np.nonzero(tall)
     clear = np.full(len(la), 150.0)
-    if len(ty):
+    if platform == "drone":
         for k, (i, j) in enumerate(zip(ci, cj)):
-            m = (np.abs(ty - i) < 9) & (np.abs(tx - j) < 9)
-            if m.any():
-                clear[k] = max(0.0, float(np.min(np.hypot(ty[m] - i, tx[m] - j))) * cm - cm / 2)
+            i0, j0 = max(0, i - 8), max(0, j - 8)
+            ty, tx = np.nonzero(hmax[i0:i + 9, j0:j + 9] > za[k] - 10)
+            if len(ty):
+                clear[k] = max(0.0, float(np.min(np.hypot(ty + i0 - i, tx + j0 - j))) * cm - cm / 2)
     canyon = window(hmax, 60, lambda a: float((a > 30).mean()))
     gbuf = max(alt, 30.0)
     people = window(R["people"], gbuf, lambda a: float(a.mean())) / (cm * cm) * 1e6
@@ -259,13 +287,13 @@ async def build_profile(route: dict, platform: str, params: dict, emit=None) -> 
         for k in range(0, len(la)):
             ii = np.linspace(ci[0], ci[k], 24).astype(int)
             jj = np.linspace(cj[0], cj[k], 24).astype(int)
-            hline = np.concatenate([[2.0], np.full(22, alt), [alt]])
-            hline[1:4] = np.linspace(2, alt, 3)
+            hline = np.concatenate([[2.0], np.full(22, za[k]), [za[k]]])
+            hline[1:4] = np.linspace(2, za[k], 3)
             nlos[k] = bool((hmax[ii, jj][1:-1] > hline[1:-1] + 2).any())
     # airspace at the flight altitude
     zone_hits = []
     for z in zones:
-        if z["lower_m"] > alt + 5:
+        if z["lower_m"] > float(za.max()) + 5:
             continue
         inside = M.point_in_ring(la, lo, z["ring"])
         if inside.any():
@@ -323,7 +351,9 @@ async def build_profile(route: dict, platform: str, params: dict, emit=None) -> 
     return {"name": route["name"], "desc": route.get("desc", ""), "format": route.get("format"), "id": route.get("id"),
             "platform": platform, "routed": routed, "length_m": round(tot, 1), "return": bool(route.get("return")),
             "alt_m": alt, "path": [(round(a, 6), round(b, 6)) for a, b in path],
-            "samples": {"lat": la, "lon": lo, "d": dd, "seg": sid}, "segments": segs,
+            "samples": {"lat": la, "lon": lo, "d": dd, "seg": sid, "alt": za}, "segments": segs, "plan": plan,
+            "path3d": [(round(a, 6), round(b, 6), round(float(z), 1)) for (a, b), z in zip(path, alts or [alt] * len(path))],
+            "direct": [(round(a, 6), round(b, 6)) for a, b in (wps + wps[::-1][1:] if route.get("return") else wps)],
             "airspace": [{k: v for k, v in z.items() if k != "mask"} for z in zone_hits],
             "geofence": route.get("geofence") or [], "bbox": [s, w, n, e], "raster": R, "feats": feats,
             "sources": {"osm": feats.get("source"), "dem": dem_src, "airspace": "openAIP daily export" if zones else "none",

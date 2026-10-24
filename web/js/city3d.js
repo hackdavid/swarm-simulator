@@ -45,7 +45,16 @@ export class City3D {
     const air = route.airspace.map(z => ({ ...z, poly: z.ring.map(L), col: z.type === 'Restricted' ? [255, 59, 107] : [255, 176, 32] }));
     this.air = new D.PolygonLayer({ id: 'air', data: air, extruded: true, wireframe: true, getPolygon: d => d.poly, getElevation: d => Math.min(d.upper_m, 600),
       getFillColor: d => [...d.col, 12], getLineColor: d => [...d.col, 70], material: false, parameters: { depthWriteEnabled: false } });
-    this.plan = route.path.map(p => [p[1], p[0], drone ? route.alt_m : 0.6]);
+    this.plan = route.path3d && drone ? route.path3d.map(p => [p[1], p[0], p[2]]) : route.path.map(p => [p[1], p[0], drone ? route.alt_m : 0.6]);
+    const dir = (route.direct || route.path).map(p => [p[1], p[0], drone ? route.alt_m : 0.6]);
+    const bi = Math.floor((dir.length - 1) / (route.return ? 2 : 1));
+    const ends = [{ p: dir[0], t: 'A · take-off' }, { p: dir[bi], t: 'B · destination' }];
+    const dl = dir.map(p => [(p[0] - this.c.longitude) * this.kx, (p[1] - this.c.latitude) * 111320]);
+    const segd = (x, y) => Math.min(...dl.slice(1).map((q, k) => { const a = dl[k], dx = q[0] - a[0], dy = q[1] - a[1], L2 = dx * dx + dy * dy || 1;
+      const u = Math.max(0, Math.min(1, ((x - a[0]) * dx + (y - a[1]) * dy) / L2)); return Math.hypot(x - a[0] - u * dx, y - a[1] - u * dy); }));
+    const avoided = drone && route.plan ? bld.filter(b => b.h > lim).map(b => { const cx = b.poly.reduce((s, p) => s + p[0], 0) / b.poly.length, cy = b.poly.reduce((s, p) => s + p[1], 0) / b.poly.length;
+      return { ...b, cen: [cx, cy], dd: segd((cx - this.c.longitude) * this.kx, (cy - this.c.latitude) * 111320) }; }).filter(b => b.dd < 70).sort((a, b) => b.h - a.h).slice(0, 8) : [];
+    this.avoidedN = avoided.length;
     this.static = [
       new D.SolidPolygonLayer({ id: 'ground', data: [{ p: [[this.c.longitude - 0.08, this.c.latitude - 0.05], [this.c.longitude + 0.08, this.c.latitude - 0.05], [this.c.longitude + 0.08, this.c.latitude + 0.05], [this.c.longitude - 0.08, this.c.latitude + 0.05]] }], getPolygon: d => d.p, getFillColor: [10, 15, 26] }),
       new D.SolidPolygonLayer({ id: 'water', data: route.water.map(r => r.map(L)), getPolygon: d => d, getFillColor: [22, 58, 104] }),
@@ -54,7 +63,11 @@ export class City3D {
       new D.PolygonLayer({ id: 'bld', data: bld, extruded: true, getPolygon: d => d.poly, getElevation: d => d.h, material: MAT, stroked: false,
         getFillColor: d => (drone && d.h > lim) ? [255, 70, 110] : HC(d.h) }),
       new D.PathLayer({ id: 'corridor', data: [{ p: this.plan }], getPath: d => d.p, getColor: [76, 242, 198, 40], getWidth: 2 * (route.alt_m > 5 ? (this.R?.corridor_m || 30) : 3), widthUnits: 'meters', billboard: false }),
-      new D.PathLayer({ id: 'plan', data: [{ p: this.plan }], getPath: d => d.p, getColor: [76, 242, 198, 200], widthMinPixels: 1.5 }),
+      new D.PathLayer({ id: 'plan', data: [{ p: this.plan }], getPath: d => d.p, getColor: [76, 242, 198, 230], widthMinPixels: 2.5 }),
+      ...(route.plan ? [new D.PathLayer({ id: 'direct', data: [{ p: dir }], getPath: d => d.p, getColor: [255, 255, 255, 110], widthMinPixels: 1.5 })] : []),
+      new D.ScatterplotLayer({ id: 'ab', data: ends, getPosition: d => [d.p[0], d.p[1], 0.5], getRadius: 14, radiusMinPixels: 6, getFillColor: [123, 140, 255], stroked: true, getLineColor: [255, 255, 255], lineWidthMinPixels: 2 }),
+      new D.TextLayer({ id: 'abt', data: ends, getPosition: d => [d.p[0], d.p[1], 40], getText: d => d.t, getSize: 14, getColor: [255, 255, 255], background: true, getBackgroundColor: [40, 50, 120, 230], backgroundPadding: [8, 4], fontWeight: 700, fontFamily: 'Inter, sans-serif' }),
+      new D.TextLayer({ id: 'avoid', data: avoided, getPosition: d => [d.cen[0], d.cen[1], d.h + 12], getText: d => `${Math.round(d.h)} m tower · avoided`, getSize: 12, getColor: [255, 210, 220], background: true, getBackgroundColor: [90, 10, 35, 210], backgroundPadding: [6, 3], fontFamily: 'Inter, sans-serif' }),
     ];
   }
   particles() {
@@ -91,11 +104,12 @@ export class City3D {
       <div class="insp-when">Departure ${esc(R.when)}</div><div class="rt-name" style="font-size:15px">${esc(this.route.name)}</div>
       <div class="c3-pass"><b style="color:${R.passed / 64 > 0.9 ? '#3bf28a' : R.passed / 64 > 0.6 ? '#ffb020' : '#ff3b6b'}">${Math.round(100 * R.passed / 64)}%</b> ${R.passed}/64 trials survived</div>
       <div class="kv">${kv.map(([a, b]) => `<span>${a}</span><b>${b}</b>`).join('')}</div>
+      ${this.route.plan ? `<div class="c3-plan"><b>${this.route.plan.ok ? '3D A* planned route' : 'Planner found no clear path · straight legs'}</b><br>${(this.route.plan.planned_m / 1000).toFixed(2)} km vs ${(this.route.plan.direct_m / 1000).toFixed(2)} km straight (+${this.route.plan.detour_pct}%) · ${this.route.plan.turns} turns · up to ${this.route.plan.max_alt_m} m<br>Restricted airspace ${Math.round(100 * this.route.plan.direct.nofly_frac)}% → ${Math.round(100 * this.route.plan.planned.nofly_frac)}% · ${this.avoidedN} towers near the straight line avoided · ${this.route.plan.buffer_m} m buffer</div>` : ''}
       <div class="c3-trial ${tr.pass ? 'ok' : 'bad'}">Trial ${this.k + 1}/64 · ${tr.pass ? 'PASS' : 'FAIL · ' + esc(tr.name) + ` at ${(tr.fail_d / 1000).toFixed(2)} km`}</div>
       <div class="c3-btns"><button class="chip" id="c3-prev">◀</button><button class="chip" id="c3-play">${this.play ? '❚❚' : '▶'}</button><button class="chip" id="c3-next">▶▶</button><button class="chip" id="c3-fail">next failure</button><button class="chip" id="c3-rate">${this.rate}×</button></div>
       <div class="c3-btns">${['chase', 'orbit', 'top', 'free'].map(c => `<button class="chip ${c === this.cam ? 'on' : ''}" data-cam="${c}">${c}</button>`).join('')}</div>
-      <div class="rt-legend"><span><i style="background:#3bf28a"></i>trial survived</span><span><i style="background:#ff3b6b"></i>trial failed</span><span><i style="background:#4cf2c6"></i>planned route & corridor</span>${this.drone ? '<span><i style="background:#ff466e"></i>building above cruise−10 m</span>' : ''}</div>
-      <div class="rt-foot">Planned route: straight legs at a fixed cruise altitude (no obstacle-avoidance planner yet). Trajectories replay the reduced-order model: lateral drift from crosswind and gusts, failure placed on its route segment. Not a flight-dynamics simulation.</div>`;
+      <div class="rt-legend"><span><i style="background:#3bf28a"></i>trial survived</span><span><i style="background:#ff3b6b"></i>trial failed</span><span><i style="background:#4cf2c6"></i>planned route & corridor</span><span><i style="background:#fff"></i>client straight line</span>${this.drone ? '<span><i style="background:#ff466e"></i>building above cruise−10 m</span>' : ''}</div>
+      <div class="rt-foot">${this.route.plan ? 'Route planned by 3D A* over OSM building heights (inflated by the lateral buffer) and restricted airspace; client waypoints kept as must-pass points.' : 'Planned route: straight legs at a fixed cruise altitude.'} Trajectories replay the reduced-order model: lateral drift from crosswind and gusts, failure placed on its route segment. Not a flight-dynamics simulation.</div>`;
     const $ = (id) => this.hudEl.querySelector(id);
     $('#c3-x').onclick = () => this.close(); $('#c3-prev').onclick = () => this.step(-1); $('#c3-next').onclick = () => this.step(1); $('#c3-fail').onclick = () => this.nextFail();
     $('#c3-play').onclick = () => { this.play = !this.play; this.hud(); }; $('#c3-rate').onclick = () => { this.rate = this.rate >= 4 ? 0.5 : this.rate * 2; this.hud(); };
@@ -142,7 +156,20 @@ export class City3D {
         this.deck.setProps({ initialViewState: { longitude: d[0], latitude: d[1], zoom: this.drone ? 16.9 : 18.2, pitch: 64, bearing: this.bear, position: [0, 0, d[2]] } }); }
       if (this.cam === 'orbit') { this.bear += dt * 6; this.deck.setProps({ initialViewState: { ...this.c, zoom: this.drone ? 14.9 : 15.9, pitch: 60, bearing: this.bear } }); }
     }
-    this.drawChart(tr, P);
+    this.drawChart(tr, P); this.result(tr);
+  }
+  result(tr) {
+    const el = this.root.querySelector('#c3-result'), last = tr.t[tr.t.length - 1], show = this.t >= last;
+    el.classList.toggle('show', show); if (!show || el.dataset.k === `${this.k}`) return; el.dataset.k = `${this.k}`;
+    const R = this.R, n = tr.fail_i ?? R.d.length - 1, flown = R.d[Math.min(n, R.d.length - 1)], mg = R.margins, pl = this.route.plan;
+    const minClear = Math.min(...R.clear.slice(0, n + 1)), row = (a, b) => `<span>${a}</span><b>${b}</b>`;
+    el.innerHTML = `<div class="c3-res-h ${tr.pass ? 'ok' : 'bad'}">${tr.pass ? 'REACHED B · PASS' : 'FAILED · ' + esc(tr.name)}</div><div class="kv">
+      ${row('Flown', `${(flown / 1000).toFixed(2)} km${pl ? ` (straight line ${((pl.direct_m * (this.route.return ? 2 : 1)) / 1000).toFixed(2)} km)` : ''}`)}
+      ${row('Flight time', `${Math.floor(last / 60)} min ${Math.round(last % 60)} s`)}
+      ${row('Closest building', minClear >= 150 ? '> 150 m' : `${minClear.toFixed(0)} m`)}
+      ${mg.reserve_pct != null ? row('Battery reserve (cell mean)', `${mg.reserve_pct.toFixed(0)}%`) : ''}
+      ${pl ? row('In restricted airspace', `${Math.round(100 * pl.planned.nofly_frac)}% (straight ${Math.round(100 * pl.direct.nofly_frac)}%)`) : ''}
+      ${row('Cell result', `${R.passed}/64 trials passed`)}</div>`;
   }
   drawChart(tr, P) {
     const c = this.chart, ctx = c.getContext('2d'), dpr = devicePixelRatio || 1, W = c.clientWidth, H = c.clientHeight;
@@ -154,13 +181,13 @@ export class City3D {
     R.nlos.forEach((v, i) => { if (v > 0.5 && i) { ctx.fillStyle = 'rgba(255,176,32,.18)'; ctx.fillRect(X(R.d[i - 1]), top, X(R.d[i]) - X(R.d[i - 1]) + 1, bot - top); } });
     ctx.fillStyle = 'rgba(255,59,107,.35)'; ctx.beginPath(); ctx.moveTo(X(0), bot);
     const ob = this.drone ? R.obst : R.people.map(v => v / 1e4); R.d.forEach((dv, i) => ctx.lineTo(X(dv), Y(ob[i]))); ctx.lineTo(X(D0), bot); ctx.fill();
-    if (this.drone) { ctx.strokeStyle = 'rgba(76,242,198,.6)'; ctx.setLineDash([5, 4]); ctx.beginPath(); ctx.moveTo(X(0), Y(R.alt_m)); ctx.lineTo(X(D0), Y(R.alt_m)); ctx.stroke(); ctx.setLineDash([]);
+    if (this.drone) { ctx.strokeStyle = 'rgba(76,242,198,.6)'; ctx.setLineDash([5, 4]); ctx.beginPath(); R.d.forEach((dv, i) => i ? ctx.lineTo(X(dv), Y(R.palt[i])) : ctx.moveTo(X(dv), Y(R.palt[i]))); ctx.stroke(); ctx.setLineDash([]);
       ctx.strokeStyle = tr.pass ? '#fff' : '#ff7896'; ctx.lineWidth = 2; ctx.beginPath(); tr.path.forEach((p, i) => { const dv = i < R.d.length ? R.d[i] : R.d[tr.fail_i]; i ? ctx.lineTo(X(dv), Y(p[2])) : ctx.moveTo(X(dv), Y(p[2])); }); ctx.stroke(); ctx.lineWidth = 1; }
     if (!tr.pass && tr.fail_i != null) { ctx.fillStyle = '#ff3b6b'; ctx.beginPath(); ctx.arc(X(tr.fail_d), Y(this.drone ? tr.path[tr.fail_i][2] : ob[tr.fail_i]), 5, 0, 7); ctx.fill(); }
     const dnow = P.i < R.d.length ? R.d[Math.max(0, P.i - 1)] + (R.d[P.i] - R.d[Math.max(0, P.i - 1)]) * 0.5 : D0;
     ctx.strokeStyle = '#4cf2c6'; ctx.beginPath(); ctx.moveTo(X(dnow), top); ctx.lineTo(X(dnow), bot); ctx.stroke();
     ctx.font = '600 10.5px JetBrains Mono'; ctx.fillStyle = '#8796b0'; ctx.textAlign = 'left';
-    ctx.fillText(this.drone ? `ALTITUDE (white) vs CRUISE ${R.alt_m} m (dashed) · TALLEST OBSTACLE NEAR PATH (red) · RADIO NLOS (amber)` : 'POPULATION PROXY ×10k/km² (red) · STREET-LEVEL ROUTE', l, 14);
+    ctx.fillText(this.drone ? `ALTITUDE (white) vs PLANNED ${R.alt_m}–${Math.max(...R.palt)} m (dashed) · TALLEST OBSTACLE NEAR PATH (red) · RADIO NLOS (amber)` : 'POPULATION PROXY ×10k/km² (red) · STREET-LEVEL ROUTE', l, 14);
     ctx.textAlign = 'right'; ctx.fillText(`${Math.round(ymax)}${this.drone ? ' m' : ''}`, l - 6, top + 8); ctx.fillText('0', l - 6, bot);
     ctx.textAlign = 'center'; for (let k = 0; k <= 4; k++) ctx.fillText(`${(D0 * k / 4 / 1000).toFixed(1)} km`, X(D0 * k / 4), H - 6);
     ctx.textAlign = 'right'; ctx.fillStyle = '#cfe'; ctx.fillText(`t+${Math.floor(this.t / 60)}:${String(Math.floor(this.t % 60)).padStart(2, '0')}`, r, 14);

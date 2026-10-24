@@ -232,12 +232,14 @@ class Run:
             raise HTTPException(409, "replay needs a route run with a built grid")
         x, y = int(np.clip(x, 0, self.S - 1)), int(np.clip(y, 0, self.S - 1))
         e = {k: v[y, x:x + 1] for k, v in self.env.items()}
-        mode = self.trials(self.params, e, 64, np.random.default_rng(y * 100003 + x), detail=True)[0][0]
+        mode, mg = self.trials(self.params, e, 64, np.random.default_rng(y * 100003 + x), detail=True)
+        mode = mode[0]
         rows = RS._rows(self.platform, self.params, e, self.prof)
         sm, segs, drone = self.prof["samples"], self.prof["segments"], self.platform == "drone"
         la, lo, dd, sg = (np.asarray(sm[k], float) for k in ("lat", "lon", "d", "seg"))
         idx = np.unique(np.linspace(0, len(la) - 1, min(len(la), 160)).astype(int))
         la, lo, dd, sg = la[idx], lo[idx], dd[idx], sg[idx].astype(int)
+        als = np.asarray(sm["alt"], float)[idx] if "alt" in sm else np.full(len(la), float(self.prof["alt_m"]))
         kx = 111320 * np.cos(np.radians(la.mean()))
         tx, ty = np.gradient((lo - lo[0]) * kx), np.gradient((la - la[0]) * 111320)
         nn = np.hypot(tx, ty) + 1e-9
@@ -279,7 +281,7 @@ class Run:
                 fi = int(rng.choice(cand)) if len(cand) else int(rng.integers(1, len(la)))
                 if drone and m == 12:
                     a[:fi + 1] += np.linspace(0, 1, fi + 1) ** 3 * (np.sign(a[fi] or 1) * corridor * 1.4 - a[fi])
-            za = np.maximum(alt * ramp + z * ramp, 0.3) if drone else np.full(len(la), alt)
+            za = np.maximum(als * ramp + z * ramp, 0.3) if drone else np.full(len(la), alt)
             lat_p, lon_p = la + ny * a / 111320, lo + nx * a / kx
             n = len(la) if fi is None else fi + 1
             pts = [[round(float(lon_p[i]), 7), round(float(lat_p[i]), 7), round(float(za[i]), 1)] for i in range(n)]
@@ -298,7 +300,8 @@ class Run:
                 "env": {k: round(float(v[0]), 2) for k, v in e.items()}, "hour": hour, "night": night, "T": round(float(T), 1),
                 "d": [round(float(v), 1) for v in dd], "t": [round(float(v), 1) for v in t],
                 "clear": sv("clearance_m"), "obst": sv("max_obstacle_m"), "nlos": sv("nlos"), "people": sv("people_per_km2"),
-                "trials": trials, "passed": int(sum(tr["pass"] for tr in trials))}
+                "trials": trials, "passed": int(sum(tr["pass"] for tr in trials)), "palt": [round(float(v), 1) for v in als],
+                "margins": {k: round(float(v), 2) for k, v in mg.items() if isinstance(v, (int, float, np.floating))}}
 
     def trials(self, p, e, K, rng, detail=False):
         if self.prof:
@@ -330,7 +333,7 @@ class Run:
         segs = [{**sg, "igrc": RT.IGRC[sg["igrc_row"]][col]} for sg in pr["segments"]]
         major = {"motorway", "trunk", "primary", "secondary", "tertiary", "residential", "footway", "pedestrian", "path"}
         self._rp = {"name": pr["name"], "desc": pr["desc"], "routed": pr["routed"], "length_m": pr["length_m"], "return": pr["return"],
-                    "alt_m": pr["alt_m"], "bbox": pr["bbox"], "path": pr["path"], "segments": segs, "sources": pr["sources"],
+                    "alt_m": pr["alt_m"], "bbox": pr["bbox"], "path": pr["path"], "path3d": pr.get("path3d"), "direct": pr.get("direct"), "plan": pr.get("plan"), "segments": segs, "sources": pr["sources"],
                     "airspace": [{k: z[k] for k in ("name", "type", "code", "lower_m", "upper_m", "frac", "ring")} for z in pr["airspace"]],
                     "geofence": pr["geofence"],
                     "buildings": [[round(b["h"], 1), rp(b["pts"])] for b in f["buildings"] if near(b["pts"], 650)][:6000],
