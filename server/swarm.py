@@ -38,38 +38,21 @@ ROBOT_FIELDS = {**DRONE_FIELDS, "wind_ms": "mean wind at ground (m/s)", "gust_ms
 MUBIT_BASE_URL = "https://api.mubit.ai/anthropic"
 
 
-def claude_config(provider: str | None = None) -> dict | None:
-    """LLM route for the Claude Agent SDK agents: "direct" or "mubit" (default from SWARM_LLM_PROVIDER)."""
+def claude_config() -> dict | None:
+    """Every swarm LLM call goes through Mubit.ai. No key (or SWARM_BACKEND=mock) means the offline deterministic agents."""
     if os.environ.get("SWARM_BACKEND") == "mock":
         return None
-    provider = (provider or os.environ.get("SWARM_LLM_PROVIDER") or "direct").strip().lower()
-    base_env = {"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1", "DISABLE_TELEMETRY": "1"}
-    if provider == "mubit":
-        key = os.environ.get("MUBIT_API_KEY")
-        if not key:
-            return None
-        model = os.environ.get("SWARM_MUBIT_MODEL") or "claude-sonnet-5-5"
-        small = os.environ.get("SWARM_MUBIT_SMALL_MODEL") or "claude-haiku-4-5"
-        # Mubit refuses calls that also carry a provider key, so the key goes in ANTHROPIC_AUTH_TOKEN only.
-        env = {**base_env, "ANTHROPIC_BASE_URL": os.environ.get("MUBIT_BASE_URL", MUBIT_BASE_URL), "ANTHROPIC_AUTH_TOKEN": key,
-               "ANTHROPIC_API_KEY": "", "ANTHROPIC_DEFAULT_HAIKU_MODEL": small, "ANTHROPIC_SMALL_FAST_MODEL": small,
-               "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1"}
-        return {"env": env, "model": model, "provider": "mubit"}
-    base = os.environ.get("ANTHROPIC_BASE_URL")
-    key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")
-    model = os.environ.get("SWARM_MODEL") or os.environ.get("ANTHROPIC_MODEL")
-    if not key and os.environ.get("PW_LLM_API_KEY"):
-        key = os.environ["PW_LLM_API_KEY"]
-        base = os.environ.get("PW_LLM_BASE_URL", "").rstrip("/").removesuffix("/v1") or None
-        model = model or os.environ.get("PW_LLM_MODEL")
+    key = os.environ.get("MUBIT_API_KEY")
     if not key:
         return None
-    env = {**base_env, "ANTHROPIC_API_KEY": key}
-    if base:
-        env["ANTHROPIC_BASE_URL"] = base
-    if model:
-        env["ANTHROPIC_SMALL_FAST_MODEL"] = model
-    return {"env": env, "model": model or "claude-sonnet-4-5", "provider": "direct"}
+    model = os.environ.get("SWARM_MUBIT_MODEL") or "claude-sonnet-5-5"
+    small = os.environ.get("SWARM_MUBIT_SMALL_MODEL") or "claude-haiku-4-5"
+    # Mubit refuses calls that also carry a provider key, so the key goes in ANTHROPIC_AUTH_TOKEN only.
+    env = {"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1", "DISABLE_TELEMETRY": "1",
+           "ANTHROPIC_BASE_URL": os.environ.get("MUBIT_BASE_URL", MUBIT_BASE_URL), "ANTHROPIC_AUTH_TOKEN": key,
+           "ANTHROPIC_API_KEY": "", "ANTHROPIC_DEFAULT_HAIKU_MODEL": small, "ANTHROPIC_SMALL_FAST_MODEL": small,
+           "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1"}
+    return {"env": env, "model": model, "provider": "mubit"}
 
 
 def _round(d):
@@ -145,7 +128,7 @@ class AgentLab:
 
 
 class Swarm:
-    def __init__(self, platform, params, weather, climate, location, n_agents, emit: Emit, provider: str | None = None, prof=None):
+    def __init__(self, platform, params, weather, climate, location, n_agents, emit: Emit, prof=None):
         self.platform, self.params, self.weather, self.climate = platform, params, weather, climate
         self.prof = prof
         self.location, self.emit = location, emit
@@ -155,7 +138,7 @@ class Swarm:
         self.cost_usd = 0.0
         self.tokens = 0
         self.shear = (max(params.get("cruise_altitude_m", 10), 10) / 10) ** 0.14 if platform == "drone" else 1.0
-        self.cfg = claude_config(provider)
+        self.cfg = claude_config()
         self.backend = "claude-agent-sdk" if self.cfg else "deterministic"
 
     def evaluate(self, scenario, trials=200, seed=7):

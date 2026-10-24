@@ -41,12 +41,50 @@ WALK = {"footway", "pedestrian", "path", "living_street", "residential", "servic
         "secondary", "primary", "cycleway", "steps", "track", "corridor"}
 
 
+class RouteError(ValueError):
+    pass
+
+
+MAX_ROUTE_BYTES = 2_000_000
+MAX_ROUTE_KM = 60
+
+
+def validate(r: dict) -> dict:
+    """Raise RouteError with a message an operator can act on."""
+    wps = r["waypoints"]
+    if len(wps) < 2:
+        raise RouteError(f"{r['format']} file has {len(wps)} usable waypoint(s); a route needs at least 2 (take-off and destination).")
+    bad = [i + 1 for i, w in enumerate(wps) if not (-90 <= w[0] <= 90 and -180 <= w[1] <= 180) or (w[0] == 0 and w[1] == 0)]
+    if bad:
+        raise RouteError(f"waypoint(s) {bad[:5]} have invalid coordinates (latitude -90..90, longitude -180..180, not 0,0).")
+    km = sum(_hav(a, b) for a, b in zip(wps, wps[1:])) / 1000
+    if km < 0.05:
+        raise RouteError("all waypoints are within 50 m of each other; nothing to fly.")
+    if km > MAX_ROUTE_KM:
+        raise RouteError(f"route is {km:.0f} km; the corridor map supports up to {MAX_ROUTE_KM} km per mission.")
+    return r
+
+
+def _hav(a, b):
+    import math
+    p1, p2 = math.radians(a[0]), math.radians(b[0])
+    dp, dl = p2 - p1, math.radians(b[1] - a[1])
+    return 2 * 6371000 * math.asin(math.sqrt(math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2))
+
+
 def parse_route(text: str, filename: str = "") -> dict:
     """Waypoints [(lat, lon, alt|None)] + optional geofence rings from a mission/route file."""
     name = filename.rsplit("/", 1)[-1] or "Uploaded route"
+    if len(text.encode()) > MAX_ROUTE_BYTES:
+        raise RouteError(f"{name} is larger than {MAX_ROUTE_BYTES // 1_000_000} MB; export only the mission route.")
     t = text.strip()
+    if not t:
+        raise RouteError(f"{name} is empty.")
     if t.startswith("{"):
-        d = json.loads(t)
+        try:
+            d = json.loads(t)
+        except json.JSONDecodeError as e:
+            raise RouteError(f"{name} is not valid JSON (line {e.lineno}, column {e.colno}): {e.msg}.") from None
         if d.get("fileType") == "Plan" or "mission" in d:  # QGroundControl .plan
             wps = []
             for it in d.get("mission", {}).get("items", []):
@@ -73,7 +111,12 @@ def parse_route(text: str, filename: str = "") -> dict:
             elif g.get("type") == "Polygon":
                 fences.append([(c[1], c[0]) for c in g["coordinates"][0]])
         return {"name": name, "format": "GeoJSON", "waypoints": wps, "geofence": fences}
-    root = ET.fromstring(re.sub(r'\sxmlns(:\w+)?="[^"]+"', "", t, count=0))
+    if not t.startswith("<"):
+        raise RouteError(f"{name} is not a QGroundControl .plan, GeoJSON, KML or GPX file.")
+    try:
+        root = ET.fromstring(re.sub(r'\sxmlns(:\w+)?="[^"]+"', "", t, count=0))
+    except ET.ParseError as e:
+        raise RouteError(f"{name} is not valid XML ({e}).") from None
     if root.tag.lower().endswith("gpx"):
         pts = root.findall(".//trkpt") or root.findall(".//rtept") or root.findall(".//wpt")
         wps = [(float(p.get("lat")), float(p.get("lon")), None) for p in pts]
@@ -105,9 +148,7 @@ def resolve(req: dict | None, platform: str) -> dict | None:
             raise ValueError(f"unknown demo route {req['id']}")
         return {"name": d["name"], "format": "demo", "desc": d["desc"], "return": d["return"],
                 "waypoints": [(a, b, None) for a, b in d["waypoints"]], "geofence": [], "id": d["id"]}
-    r = parse_route(req.get("text", ""), req.get("name", ""))
-    if len(r["waypoints"]) < 2:
-        raise ValueError("route needs at least 2 waypoints")
+    r = validate(parse_route(req.get("text", ""), req.get("name", "")))
     r["return"] = bool(req.get("return", False))
     r["desc"] = f"{r['format']} upload · {len(r['waypoints'])} waypoints"
     return r

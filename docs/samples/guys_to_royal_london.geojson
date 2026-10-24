@@ -1,0 +1,41 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "Guy's \u2192 Royal London"
+   },
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      -0.0873,
+      51.5033,
+      60
+     ],
+     [
+      -0.079,
+      51.5062,
+      60
+     ],
+     [
+      -0.0712,
+      51.5098,
+      60
+     ],
+     [
+      -0.065,
+      51.514,
+      60
+     ],
+     [
+      -0.059,
+      51.5185,
+      60
+     ]
+    ]
+   }
+  }
+ ]
+}
