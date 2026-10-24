@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Swarm Proving Ground — drone & robot stress test</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="logo"></span><b>SWARM</b>&nbsp;PROVING GROUND</div>
+  <ol class="stepper" id="stepper">
+    <li data-step="select">1 · Platform</li><li data-step="config">2 · Parameters</li>
+    <li data-step="swarm">3 · Agent swarm</li><li data-step="plane">4 · Proving ground</li>
+  </ol>
+  <div class="badge" id="backend-badge">…</div>
+</header>
+
+<main>
+  <!-- 1. platform -->
+  <section class="screen" id="screen-select">
+    <div class="hero">
+      <h1>Crash it in simulation<br><span class="grad">before the real world does.</span></h1>
+      <p>Pick a platform. A swarm of Claude agents hunts its failure cases in a real year of weather, then a million environments fly it at once.</p>
+    </div>
+    <div class="pick">
+      <button class="pick-card" data-platform="drone"><canvas class="pick-art" data-art="drone" width="420" height="260"></canvas>
+        <h2>Drone</h2><p>Multirotor UAV · 6 DOF · 4–8 rotor inputs</p><span class="cta">Configure →</span></button>
+      <button class="pick-card" data-platform="robot"><canvas class="pick-art" data-art="robot" width="420" height="260"></canvas>
+        <h2>Robot</h2><p>Ground UGV · wheeled, tracked or legged</p><span class="cta">Configure →</span></button>
+    </div>
+  </section>
+
+  <!-- 2. config -->
+  <section class="screen" id="screen-config">
+    <aside class="panel params" id="params"></aside>
+    <div class="config-main">
+      <div class="vehicle-card">
+        <canvas id="vehicle-art" width="760" height="360"></canvas>
+        <div class="derived" id="derived"></div>
+      </div>
+      <div class="panel site">
+        <h3>Test site — last 12 months of real hourly weather</h3>
+        <div class="chips" id="locations"></div>
+        <div class="row">
+          <label>Swarm size <b id="agents-val">24</b> agents</label>
+          <input type="range" id="agents" min="8" max="30" value="24">
+        </div>
+        <div class="row">
+          <label>Proving-ground plane</label>
+          <select id="gridsize"><option value="512">512 × 512 = 262,144 cells</option><option value="1024" selected>1024 × 1024 = 1,048,576 cells</option><option value="1448">1448 × 1448 = 2,096,704 cells</option></select>
+        </div>
+        <button class="launch" id="launch">Launch agent swarm</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3. swarm -->
+  <section class="screen" id="screen-swarm">
+    <aside class="panel climate">
+      <h3 id="climate-title">Climate ingest</h3>
+      <div class="climate-src" id="climate-src">connecting…</div>
+      <div class="chart" ><span>Max gust / day (m/s)</span><canvas id="ch-gust" width="320" height="70"></canvas></div>
+      <div class="chart"><span>Rain / day (mm)</span><canvas id="ch-rain" width="320" height="70"></canvas></div>
+      <div class="chart"><span>Temperature min–max (°C)</span><canvas id="ch-temp" width="320" height="70"></canvas></div>
+      <div class="climate-counts" id="climate-counts"></div>
+    </aside>
+    <div class="swarm-main">
+      <div class="swarm-stats" id="swarm-stats"></div>
+      <canvas id="swarm-net"></canvas>
+      <div class="agents" id="agents-grid"></div>
+    </div>
+    <aside class="panel feed">
+      <h3>Verified failure cases <b id="case-count">0</b></h3>
+      <div id="cases"></div>
+    </aside>
+  </section>
+
+  <!-- 4. plane -->
+  <section class="screen" id="screen-plane">
+    <canvas id="plane"></canvas>
+    <div class="hud-top" id="hud-top"></div>
+    <div class="hud-left panel" id="hud-left"></div>
+    <div class="hud-right panel" id="inspector"></div>
+    <div class="hud-bottom" id="hud-bottom"></div>
+    <canvas id="minimap" width="180" height="180"></canvas>
+    <div class="overlay" id="plane-overlay"><div class="ov-inner"><div class="ov-k" id="ov-k">PHASE 2</div><div class="ov-t" id="ov-t">Building the proving ground</div><div class="ov-s" id="ov-s"></div></div></div>
+    <div class="report panel" id="report"></div>
+    <button class="rep-open" id="rep-open">▲ Show report & fixes</button>
+  </section>
+</main>
+<script type="module" src="/js/main.js"></script>
+</body>
+</html>

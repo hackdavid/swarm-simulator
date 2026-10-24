@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.pyc
+data/weather_cache/
+*.mp4
+*.webm
