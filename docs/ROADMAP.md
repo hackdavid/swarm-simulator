@@ -9,7 +9,7 @@ timeline
     title Environmental layers
     Shipped : Real weather year (wind, gusts, shear, rain, snow, icing, heat, cold)
             : Drone and ground-robot physics
-            : Switchable LLM route (direct or Mubit.ai)
+            : Every LLM call via Mubit.ai
     Now     : Map routing and terrain (Phase 1)
             : Human and obstacle avoidance
             : Airspace and geofencing
@@ -28,7 +28,7 @@ timeline
 | Drone and ground-robot platforms | Full parameter schemas, vectorised reduced-order physics, per-mode fixes. |
 | Parallel agent swarm | Up to 30 Claude Agent SDK specialists with MCP tools and a 400-trial verification gate. |
 | Million-cell proving ground | Live-streamed Monte-Carlo plane with single-cell forensics. |
-| LLM route switch | Direct Anthropic-compatible API or Mubit.ai proxy (records agent calls, trains task adapters). |
+| Mubit-only LLM route | Swarm and flight-ops review call Claude only through Mubit.ai (records calls, trains task adapters). |
 
 ## Next
 

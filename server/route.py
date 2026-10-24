@@ -57,19 +57,12 @@ def validate(r: dict) -> dict:
     bad = [i + 1 for i, w in enumerate(wps) if not (-90 <= w[0] <= 90 and -180 <= w[1] <= 180) or (w[0] == 0 and w[1] == 0)]
     if bad:
         raise RouteError(f"waypoint(s) {bad[:5]} have invalid coordinates (latitude -90..90, longitude -180..180, not 0,0).")
-    km = sum(_hav(a, b) for a, b in zip(wps, wps[1:])) / 1000
+    km = sum(_hav(a[0], a[1], b[0], b[1]) for a, b in zip(wps, wps[1:])) / 1000
     if km < 0.05:
         raise RouteError("all waypoints are within 50 m of each other; nothing to fly.")
     if km > MAX_ROUTE_KM:
         raise RouteError(f"route is {km:.0f} km; the corridor map supports up to {MAX_ROUTE_KM} km per mission.")
     return r
-
-
-def _hav(a, b):
-    import math
-    p1, p2 = math.radians(a[0]), math.radians(b[0])
-    dp, dl = p2 - p1, math.radians(b[1] - a[1])
-    return 2 * 6371000 * math.asin(math.sqrt(math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2))
 
 
 def parse_route(text: str, filename: str = "") -> dict:
