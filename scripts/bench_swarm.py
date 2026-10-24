@@ -2,7 +2,7 @@
 
   .venv/bin/python scripts/bench_swarm.py --agents 8 --platform drone --tag mubit-1
 """
-import argparse, asyncio, json, os, sys, time
+import argparse, asyncio, json, sys, time
 from collections import Counter
 from pathlib import Path
 
