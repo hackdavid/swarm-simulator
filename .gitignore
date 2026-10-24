@@ -6,3 +6,4 @@ data/weather_cache/
 *.webm
 data/bench/
 data/map_cache/
+!docs/media/*.mp4
