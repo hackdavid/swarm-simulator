@@ -9,11 +9,20 @@ Their findings seed a zoomable proving ground of more than one million Monte-Car
 
 `Python 3.12` · `FastAPI` · `Claude Agent SDK` · `MCP tools` · `NumPy` · `WebSocket streaming` · `Canvas 2D` · `Open-Meteo ERA5` · `Mubit.ai`
 
-![Proving ground: 1,048,576 environment cells](docs/img/plane.jpg)
+[Proving ground: 1,048,576 environment cells](docs/img/plane.jpg)
 
 </div>
 
 ---
+<div align="center">
+  <a href="https://www.youtube.com/watch?v=YUvj0v6jV14">
+    <img src="https://img.youtube.com/vi/YUvj0v6jV14/maxresdefault.jpg" alt="Watch Demo Video" width="100%" style="max-width:700px; border-radius: 8px 8px 0 0;">
+  </a>
+  <br/>
+  <a href="https://www.youtube.com/watch?v=YUvj0v6jV14">
+    <img src="https://img.shields.io/badge/▶%20Watch%20Full%20Video-FF0000?style=for-the-badge&logo=youtube&logoColor=white" alt="Watch on YouTube">
+  </a>
+</div>
 
 ## Why it exists
 
