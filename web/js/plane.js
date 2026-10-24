@@ -168,9 +168,10 @@ export class PlaneView {
     this.recent = this.recent.filter(r => ts - r.t < 900);
     for (const r of this.recent) { const a = 1 - (ts - r.t) / 900; ctx.strokeStyle = `rgba(76,242,198,${a})`; ctx.lineWidth = 2; ctx.strokeRect(sx(r.tx), sy(r.ty), r.tw * z, r.th * z); ctx.fillStyle = `rgba(76,242,198,${a * 0.12})`; ctx.fillRect(sx(r.tx), sy(r.ty), r.tw * z, r.th * z); }
     // agent stress districts
-    if (z < 30) for (const r of this.meta.regions || []) { if (!this.tested[r.cy * this.S + r.cx]) continue; const R = r.r * z;
+    const placed = []; if (z < 30) for (const r of this.meta.regions || []) { if (!this.tested[r.cy * this.S + r.cx]) continue; const R = r.r * z;
       ctx.strokeStyle = 'rgba(255,59,107,.75)'; ctx.setLineDash([6, 5]); ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(sx(r.cx), sy(r.cy), R, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
-      if (R > 18) { ctx.font = '600 11px Inter'; ctx.fillStyle = 'rgba(3,5,10,.7)'; const lab = r.agent + ' · ' + r.title.split(' — ')[0], tw = ctx.measureText(lab).width; ctx.fillRect(sx(r.cx) - tw / 2 - 5, sy(r.cy) - R - 20, tw + 10, 16); ctx.fillStyle = '#ff9fb6'; ctx.fillText(lab, sx(r.cx) - tw / 2, sy(r.cy) - R - 8); } }
+      if (R > 18) { ctx.font = '600 11px Inter'; const lab = r.agent + ' · ' + r.title.split(' — ')[0], tw = ctx.measureText(lab).width, bx = sx(r.cx) - tw / 2 - 5, by = sy(r.cy) - R - 20;
+        if (placed.some(q => bx < q[0] + q[2] && q[0] < bx + tw + 10 && by < q[1] + 16 && q[1] < by + 16)) continue; placed.push([bx, by, tw + 10]); ctx.fillStyle = 'rgba(3,5,10,.7)'; ctx.fillRect(sx(r.cx) - tw / 2 - 5, sy(r.cy) - R - 20, tw + 10, 16); ctx.fillStyle = '#ff9fb6'; ctx.fillText(lab, sx(r.cx) - tw / 2, sy(r.cy) - R - 8); } }
     if (this.sel) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; const pad = Math.max(3, 8 - z); ctx.strokeRect(sx(this.sel.x) - pad, sy(this.sel.y) - pad, z + pad * 2, z + pad * 2); }
     if (this.hover && z > 2) { ctx.strokeStyle = 'rgba(255,255,255,.6)'; ctx.lineWidth = 1; ctx.strokeRect(sx(this.hover.x), sy(this.hover.y), z, z); }
     // inspector scene

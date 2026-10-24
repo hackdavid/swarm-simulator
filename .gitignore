@@ -4,3 +4,4 @@ __pycache__/
 data/weather_cache/
 *.mp4
 *.webm
+data/bench/

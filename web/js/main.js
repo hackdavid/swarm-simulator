@@ -32,7 +32,7 @@ function overlay(k, t, s, hide) {
 async function launch() {
   if (S.ws) S.ws.close();
   swarm.reset();
-  const body = { platform: S.platform, params: S.values, location: { id: S.location }, agents: +$('#agents').value, grid: +$('#gridsize').value };
+  const body = { platform: S.platform, params: S.values, location: { id: S.location }, agents: +$('#agents').value, grid: +$('#gridsize').value, provider: S.provider };
   const r = await (await fetch('/api/runs', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })).json();
   S.run = r; plane.runId = r.id; plane.doneAt = null;
   show('swarm');
@@ -44,7 +44,7 @@ async function launch() {
 function handle(e) {
   switch (e.type) {
     case 'phase':
-      if (e.phase === 'swarm') swarm.roster(e.roster, e.backend, e.model);
+      if (e.phase === 'swarm') swarm.roster(e.roster, e.backend, e.model, e.provider);
       if (e.phase === 'grid_build') { show('plane'); overlay('PHASE 2 · PROVING GROUND', `Building ${e.cells.toLocaleString()} environments`, 'every cell = a distinct hour of weather × terrain × payload, seeded from the measured year + agent stress districts'); }
       if (e.phase === 'grid_test') { overlay('PHASE 3 · MONTE-CARLO', `Testing ${e.cells.toLocaleString()} cells × ${e.trials} trials`, `${(e.cells * e.trials).toLocaleString()} simulated ${S.platform === 'drone' ? 'flights' : 'missions'}`); setTimeout(() => overlay('', '', '', true), 1800); }
       if (e.phase === 'report') overlay('PHASE 4', 'Engineering fixes', e.text, false), setTimeout(() => overlay('', '', '', true), 1400);
@@ -64,9 +64,16 @@ function handle(e) {
 
 async function boot() {
   S.meta = await (await fetch('/api/meta')).json();
-  const b = $('#backend-badge');
-  b.textContent = S.meta.backend === 'claude-agent-sdk' ? `● Claude Agent SDK · ${S.meta.model}` : '● deterministic agents (set ANTHROPIC_API_KEY for Claude)';
-  b.classList.toggle('live', S.meta.backend === 'claude-agent-sdk');
+  S.provider = S.meta.provider || 'direct';
+  const ROUTE = { direct: 'Direct Claude API', mubit: 'via Mubit.ai proxy' };
+  const badge = () => {
+    const b = $('#backend-badge'), m = S.meta.routes?.[S.provider];
+    b.textContent = m ? `● Claude Agent SDK · ${m} · ${ROUTE[S.provider]}` : '● deterministic agents (no key for this LLM route)';
+    b.classList.toggle('live', !!m);
+  };
+  $('#routes').innerHTML = Object.entries(ROUTE).map(([k, v]) => `<button class="chip ${k === S.provider ? 'on' : ''}" data-id="${k}" ${S.meta.routes?.[k] ? '' : 'disabled title="no key configured"'}>${v}</button>`).join('');
+  $('#routes').querySelectorAll('.chip').forEach(c => c.onclick = () => { S.provider = c.dataset.id; $('#routes').querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x === c)); badge(); });
+  badge();
   document.querySelectorAll('.pick-art').forEach(c => pickArt(c, c.dataset.art));
   document.querySelectorAll('.pick-card').forEach(c => c.onclick = () => choose(c.dataset.platform));
   $('#locations').innerHTML = S.meta.presets.map(p => `<button class="chip ${p.id === S.location ? 'on' : ''}" data-id="${p.id}">${p.name}</button>`).join('');

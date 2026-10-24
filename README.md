@@ -25,9 +25,13 @@ Claude credentials (any one):
 | `ANTHROPIC_API_KEY` (+ optional `ANTHROPIC_BASE_URL`, `ANTHROPIC_MODEL`/`SWARM_MODEL`) | standard Anthropic / compatible proxy |
 | `PW_LLM_API_KEY`, `PW_LLM_BASE_URL`, `PW_LLM_MODEL` | fallback proxy config |
 | `SWARM_BACKEND=mock` | force deterministic agents (no LLM calls, free, same tool protocol) |
+| `SWARM_LLM_PROVIDER=mubit` + `MUBIT_API_KEY` (+ optional `SWARM_MUBIT_MODEL`, default `claude-sonnet-5-5`) | route the Claude Agent SDK agents through the [Mubit](https://docs.mubit.ai) proxy (`https://api.mubit.ai/anthropic`), which records calls, groups them into tasks and trains adapters. `direct` (default) keeps the route above |
 
 Tuning: `SWARM_CONCURRENCY` (default 30), `SWARM_AGENT_TIMEOUT` (s, default 300),
 `GRID_REVEAL_SECONDS` (pacing of the plane fill, default 16).
+
+The route can also be picked per run in the UI ("LLM route" chips) or with `"provider": "direct"|"mubit"` in `POST /api/runs`.
+Benchmark a route without the grid: `SWARM_LLM_PROVIDER=mubit .venv/bin/python scripts/bench_swarm.py --agents 8` (results in `data/bench/`).
 
 No key? The app runs with deterministic search agents that call the same three tools.
 

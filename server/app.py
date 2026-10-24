@@ -34,6 +34,7 @@ class RunRequest(BaseModel):
     agents: int = 24
     grid: int = 1024
     trials: int = 16
+    provider: str | None = None  # "direct" | "mubit"; default from SWARM_LLM_PROVIDER
 
 
 class Run:
@@ -76,9 +77,9 @@ class Run:
         await self.emit({"type": "weather", "climate": self.climate, "location": self.location})
         await asyncio.sleep(1.2)
         n = max(4, min(int(self.req.agents), 30))
-        self.swarm = Swarm(self.platform, self.params, self.weather, self.climate, self.location, n, self.emit)
+        self.swarm = Swarm(self.platform, self.params, self.weather, self.climate, self.location, n, self.emit, self.req.provider)
         cfg = self.swarm.cfg
-        await self.phase("swarm", backend=self.swarm.backend, model=cfg["model"] if cfg else None,
+        await self.phase("swarm", backend=self.swarm.backend, model=cfg["model"] if cfg else None, provider=cfg["provider"] if cfg else None,
                          roster=self.swarm.roster())
         await self.swarm.run()
         await self.emit({"type": "swarm_done", "cases": len(self.swarm.cases), "physics_trials": self.swarm.physics_trials,
@@ -199,8 +200,9 @@ class Run:
 @app.get("/api/meta")
 def meta():
     cfg = claude_config()
+    routes = {p: (c["model"] if (c := claude_config(p)) else None) for p in ("direct", "mubit")}
     return {"platforms": PLATFORMS, "presets": PRESETS, "backend": "claude-agent-sdk" if cfg else "deterministic",
-            "model": cfg["model"] if cfg else None}
+            "model": cfg["model"] if cfg else None, "provider": cfg["provider"] if cfg else None, "routes": routes}
 
 
 @app.post("/api/runs")

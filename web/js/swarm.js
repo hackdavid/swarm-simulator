@@ -21,8 +21,8 @@ export class SwarmView {
       [k.gust_gt_15ms_hours, 'gust >15 m/s h'], [p.pressure.min + ' hPa', 'lowest pressure']];
     document.getElementById('climate-counts').innerHTML = items.map(([a, b]) => `<div class="cc"><b>${a}</b><span>${b}</span></div>`).join('');
   }
-  roster(list, backend, model) {
-    this.backend = backend; this.t0 = performance.now(); this.active = true;
+  roster(list, backend, model, provider) {
+    this.backend = backend; this.provider = provider; this.t0 = performance.now(); this.active = true;
     this.agents = list.map((r, i) => ({ ...r, status: 'queued', tools: 0, cases: 0, pulse: 0, a: i / list.length * TAU }));
     this.grid.innerHTML = list.map(r => `<div class="ag" id="ag-${r.id}"><div class="n">${r.name}</div><span class="st">QUEUED</span><div class="th">${r.focus}</div><div class="tl"></div><div class="bar"></div></div>`).join('');
     this.renderStats();
@@ -99,7 +99,7 @@ export class SwarmView {
         if (a.cases) { ctx.fillStyle = '#ff3b6b'; ctx.font = '700 10px JetBrains Mono'; ctx.fillText('✕' + a.cases, x, y - 13); } });
       ctx.textAlign = 'left';
       ctx.fillStyle = '#8796b0'; ctx.font = '11px JetBrains Mono';
-      ctx.fillText(this.backend === 'claude-agent-sdk' ? `● LIVE · ${this.agents.length} Claude Agent SDK agents in parallel · tools: find_weather_hours / run_physics_test / submit_failure_case` : `● ${this.agents.length} deterministic search agents (no Claude key) · same tool protocol`, 14, 20);
+      ctx.fillText(this.backend === 'claude-agent-sdk' ? `● LIVE · ${this.agents.length} Claude Agent SDK agents in parallel${this.provider === 'mubit' ? ' via Mubit.ai' : ''} · tools: find_weather_hours / run_physics_test / submit_failure_case` : `● ${this.agents.length} deterministic search agents (no Claude key) · same tool protocol`, 14, 20);
     }
     requestAnimationFrame(this.frame.bind(this));
   }

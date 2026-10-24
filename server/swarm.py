@@ -34,7 +34,26 @@ ROBOT_FIELDS = {**DRONE_FIELDS, "wind_ms": "mean wind at ground (m/s)", "gust_ms
                 "obstacle_cm": "obstacle/kerb height (cm)"}
 
 
-def claude_config() -> dict | None:
+MUBIT_BASE_URL = "https://api.mubit.ai/anthropic"
+
+
+def claude_config(provider: str | None = None) -> dict | None:
+    """LLM route for the Claude Agent SDK agents: "direct" or "mubit" (default from SWARM_LLM_PROVIDER)."""
+    if os.environ.get("SWARM_BACKEND") == "mock":
+        return None
+    provider = (provider or os.environ.get("SWARM_LLM_PROVIDER") or "direct").strip().lower()
+    base_env = {"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1", "DISABLE_TELEMETRY": "1"}
+    if provider == "mubit":
+        key = os.environ.get("MUBIT_API_KEY")
+        if not key:
+            return None
+        model = os.environ.get("SWARM_MUBIT_MODEL") or "claude-sonnet-5-5"
+        small = os.environ.get("SWARM_MUBIT_SMALL_MODEL") or "claude-haiku-4-5"
+        # Mubit refuses calls that also carry a provider key, so the key goes in ANTHROPIC_AUTH_TOKEN only.
+        env = {**base_env, "ANTHROPIC_BASE_URL": os.environ.get("MUBIT_BASE_URL", MUBIT_BASE_URL), "ANTHROPIC_AUTH_TOKEN": key,
+               "ANTHROPIC_API_KEY": "", "ANTHROPIC_DEFAULT_HAIKU_MODEL": small, "ANTHROPIC_SMALL_FAST_MODEL": small,
+               "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1"}
+        return {"env": env, "model": model, "provider": "mubit"}
     base = os.environ.get("ANTHROPIC_BASE_URL")
     key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")
     model = os.environ.get("SWARM_MODEL") or os.environ.get("ANTHROPIC_MODEL")
@@ -42,14 +61,14 @@ def claude_config() -> dict | None:
         key = os.environ["PW_LLM_API_KEY"]
         base = os.environ.get("PW_LLM_BASE_URL", "").rstrip("/").removesuffix("/v1") or None
         model = model or os.environ.get("PW_LLM_MODEL")
-    if not key or os.environ.get("SWARM_BACKEND") == "mock":
+    if not key:
         return None
-    env = {"ANTHROPIC_API_KEY": key, "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1", "DISABLE_TELEMETRY": "1"}
+    env = {**base_env, "ANTHROPIC_API_KEY": key}
     if base:
         env["ANTHROPIC_BASE_URL"] = base
     if model:
         env["ANTHROPIC_SMALL_FAST_MODEL"] = model
-    return {"env": env, "model": model or "claude-sonnet-4-5"}
+    return {"env": env, "model": model or "claude-sonnet-4-5", "provider": "direct"}
 
 
 def _round(d):
@@ -125,7 +144,7 @@ class AgentLab:
 
 
 class Swarm:
-    def __init__(self, platform, params, weather, climate, location, n_agents, emit: Emit):
+    def __init__(self, platform, params, weather, climate, location, n_agents, emit: Emit, provider: str | None = None):
         self.platform, self.params, self.weather, self.climate = platform, params, weather, climate
         self.location, self.emit = location, emit
         self.roles = ROLES[platform][:n_agents]
@@ -134,7 +153,7 @@ class Swarm:
         self.cost_usd = 0.0
         self.tokens = 0
         self.shear = (max(params.get("cruise_altitude_m", 10), 10) / 10) ** 0.14 if platform == "drone" else 1.0
-        self.cfg = claude_config()
+        self.cfg = claude_config(provider)
         self.backend = "claude-agent-sdk" if self.cfg else "deterministic"
 
     def roster(self):
@@ -216,15 +235,18 @@ class Swarm:
                       "required": ["title", "mechanism", "severity", "mitigation", "scenario"]})(wrap(lab.submit_failure_case))
         server = create_sdk_mcp_server("lab", "1.0.0", [t_hours, t_phys, t_sub])
         name, focus, _ = lab.role
-        system = (f"You are '{name}', agent {lab.idx + 1} of {len(self.roles)} in a parallel swarm hunting failure cases for a "
-                  f"{self.platform} before it is deployed. Your specialty: {focus}. Ground every scenario in the real weather record "
+        # One shared system prompt per platform: Mubit groups calls into a task by instructions + tools + model,
+        # so the per-agent role goes in the user message and the whole swarm trains a single adapter.
+        system = (f"You are one agent in a parallel swarm hunting failure cases for a {self.platform} before it is deployed. "
+                  "Your specialty is given in the user message. Ground every scenario in the real weather record "
                   "(use find_weather_hours) and verify with run_physics_test. Search for the minimal realistic scenario that fails. "
                   "Submit 1-2 failure cases (pass rate below ~50%) with a concrete engineering mitigation. If the vehicle survives "
                   "everything realistic in your specialty, say so. Max 6 tool calls. Think briefly. Finish with one sentence.")
         opts = ClaudeAgentOptions(model=self.cfg["model"], system_prompt=system, mcp_servers={"lab": server},
                                   allowed_tools=["mcp__lab__find_weather_hours", "mcp__lab__run_physics_test", "mcp__lab__submit_failure_case"],
                                   tools=[], max_turns=14, env=self.cfg["env"], cwd=tempfile.gettempdir())
-        prompt = self._context() + "\n\nBegin your investigation now."
+        prompt = (f"You are '{name}', agent {lab.idx + 1} of {len(self.roles)}. Your specialty: {focus}.\n\n"
+                  + self._context() + "\n\nBegin your investigation now.")
         async for m in query(prompt=prompt, options=opts):
             if isinstance(m, AssistantMessage):
                 for b in m.content:
