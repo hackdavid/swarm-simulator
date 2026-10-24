@@ -61,7 +61,7 @@ SWARM_BACKEND=mock uv run uvicorn server.app:app --port 8811   # free, determini
 
 | Task | How |
 |---|---|
-| Compare LLM routes | `SWARM_LLM_PROVIDER=direct|mubit uv run python scripts/bench_swarm.py --agents 8 --platform drone` (results in `data/bench/`) |
+| Benchmark the swarm (via Mubit) | `uv run python scripts/bench_swarm.py --agents 8 --platform drone` (results in `data/bench/`) |
 | Add a parameter | Add it to the platform schema in `platforms.py`, use it in `physics.py`; the UI renders it automatically. |
 | Add a failure mode | Emit a new mode code in `physics.py`, add its label, add a fix in `fixes.py`. |
 | Add an agent specialist | Add a role to `roster.py` (name, focus, stressed variables). |

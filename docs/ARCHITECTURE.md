@@ -55,14 +55,15 @@ flowchart TB
 
 ```mermaid
 flowchart LR
-    A["Swarm agent<br/>claude_agent_sdk.query()"] --> B{SWARM_LLM_PROVIDER<br/>or run.provider}
-    B -- direct --> C["ANTHROPIC_BASE_URL / ANTHROPIC_API_KEY<br/>(or PW_LLM_* proxy)"] --> E[Claude]
-    B -- mubit --> D["https://api.mubit.ai/anthropic<br/>ANTHROPIC_AUTH_TOKEN = MUBIT_API_KEY"] --> E
-    D -. records calls .-> F["Mubit tasks → kept examples → adapters"]
-    B -- no key / SWARM_BACKEND=mock --> G["Deterministic agents<br/>same MCP tool protocol"]
+    A["Swarm agent<br/>claude_agent_sdk.query()"] --> K{MUBIT_API_KEY set?}
+    R["Flight-ops review<br/>server/review.py"] --> D
+    K -- yes --> D["https://api.mubit.ai/anthropic<br/>ANTHROPIC_AUTH_TOKEN = MUBIT_API_KEY"] --> E[Claude]
+    D -. records calls .-> F["Mubit tasks → rated replies → adapters"]
+    K -- no / SWARM_BACKEND=mock --> G["Offline deterministic agents<br/>same MCP tool protocol, no LLM calls"]
 ```
 
-- `claude_config(provider)` resolves the route per run, so one server can serve both routes side by side.
+- `claude_config()` has a single route: Mubit. There is no direct Anthropic or `PW_LLM_*` path.
+- The flight-ops review (`server/review.py`) is a single-turn Messages call with a fixed top-level `system` prompt and JSON reply, so every review lands in one Mubit task whose traces only use `user`/`assistant` roles. Each reply's `x-middleware-request-id` and served model are shown in the report, and reviews are logged per route in `data/reviews.jsonl` so a later answer can be compared with the previous one.
 - On the Mubit route the key is sent only as `ANTHROPIC_AUTH_TOKEN` (Mubit refuses calls carrying a second key), and `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1` keeps requests within the betas the starter credit serves.
 - Mubit groups calls into a task by system prompt, tools, tool choice, output format and model. The swarm therefore uses one shared system prompt per platform and puts each agent's role in the user message, so every agent feeds a single task and its adapter.
 

@@ -1,8 +1,8 @@
-"""Run only the agent swarm (no grid) and record speed, reliability and output quality per LLM route.
+"""Run only the agent swarm (no grid, every call via Mubit.ai) and record speed, reliability and output quality.
 
-  SWARM_LLM_PROVIDER=mubit .venv/bin/python scripts/bench_swarm.py --agents 8 --platform drone --tag mubit-1
+  .venv/bin/python scripts/bench_swarm.py --agents 8 --platform drone --tag mubit-1
 """
-import argparse, asyncio, json, os, sys, time
+import argparse, asyncio, json, sys, time
 from collections import Counter
 from pathlib import Path
 
@@ -21,7 +21,7 @@ async def main():
     a = ap.parse_args()
     cfg = claude_config()
     if not cfg:
-        sys.exit("no LLM route configured (check SWARM_LLM_PROVIDER / keys)")
+        sys.exit("MUBIT_API_KEY is not set (or SWARM_BACKEND=mock)")
     loc = next(l for l in LOCATIONS if l["id"] == a.location)
     w = await fetch_year(loc["lat"], loc["lon"])
     events: list[dict] = []

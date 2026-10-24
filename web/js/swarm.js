@@ -99,7 +99,7 @@ export class SwarmView {
         if (a.cases) { ctx.fillStyle = '#ff3b6b'; ctx.font = '700 10px JetBrains Mono'; ctx.fillText('✕' + a.cases, x, y - 13); } });
       ctx.textAlign = 'left';
       ctx.fillStyle = '#8796b0'; ctx.font = '11px JetBrains Mono';
-      ctx.fillText(this.backend === 'claude-agent-sdk' ? `● LIVE · ${this.agents.length} Claude Agent SDK agents in parallel${this.provider === 'mubit' ? ' via Mubit.ai' : ''} · tools: find_weather_hours / run_physics_test / submit_failure_case` : `● ${this.agents.length} deterministic search agents (no Claude key) · same tool protocol`, 14, 20);
+      ctx.fillText(this.backend === 'claude-agent-sdk' ? `● LIVE · ${this.agents.length} Claude Agent SDK agents in parallel via Mubit.ai · tools: find_weather_hours / run_physics_test / submit_failure_case` : `● ${this.agents.length} offline deterministic agents (no MUBIT_API_KEY, no LLM calls) · same tool protocol`, 14, 20);
     }
     requestAnimationFrame(this.frame.bind(this));
   }

@@ -7,3 +7,4 @@ data/weather_cache/
 data/bench/
 data/map_cache/
 !docs/media/*.mp4
+data/reviews.jsonl

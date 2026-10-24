@@ -1,5 +1,5 @@
 import { renderParams, renderDerived, vehicleLoop, pickArt } from './config.js';
-import { SwarmView } from './swarm.js';
+import { SwarmView, esc } from './swarm.js';
 import { PlaneView } from './plane.js';
 import { MapView } from './map.js';
 import { City3D } from './city3d.js';
@@ -37,7 +37,7 @@ async function launch() {
   if (S.ws) S.ws.close();
   swarm.reset();
   S.routeData = null; document.body.classList.toggle('has-route', !!S.route);
-  const body = { platform: S.platform, params: S.values, location: { id: S.location }, agents: +$('#agents').value, grid: +$('#gridsize').value, provider: S.provider, route: S.route };
+  const body = { platform: S.platform, params: S.values, location: { id: S.location }, agents: +$('#agents').value, grid: +$('#gridsize').value, route: S.route };
   const r = await (await fetch('/api/runs', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })).json();
   if (r.detail) { $('#route-note').textContent = 'Route error: ' + r.detail; return; }
   S.run = r; plane.runId = r.id; plane.doneAt = null;
@@ -69,22 +69,16 @@ function handle(e) {
     case 'grid_progress': plane.progress(e); if (e.seg_fail && S.routeData) { map.setHeat(e.seg_fail, e.seg_flights, e.seg_mode); mini.setHeat(e.seg_fail, e.seg_flights, e.seg_mode); map.panel($('#route-side')); } break;
     case 'fix': plane.addFix(e.fix); break;
     case 'report': plane.report(e, (params) => { S.values = { ...params }; launch(); }); window.SPG.reported = true; break;
+    case 'review': renderReview(e); break;
     case 'error': $('#backend-badge').textContent = 'error: ' + e.text; $('#backend-badge').style.color = '#ff3b6b'; break;
   }
 }
 
 async function boot() {
   S.meta = await (await fetch('/api/meta')).json();
-  S.provider = S.meta.provider || 'direct';
-  const ROUTE = { direct: 'Direct Claude API', mubit: 'via Mubit.ai proxy' };
-  const badge = () => {
-    const b = $('#backend-badge'), m = S.meta.routes?.[S.provider];
-    b.textContent = m ? `● Claude Agent SDK · ${m} · ${ROUTE[S.provider]}` : '● deterministic agents (no key for this LLM route)';
-    b.classList.toggle('live', !!m);
-  };
-  $('#routes').innerHTML = Object.entries(ROUTE).map(([k, v]) => `<button class="chip ${k === S.provider ? 'on' : ''}" data-id="${k}" ${S.meta.routes?.[k] ? '' : 'disabled title="no key configured"'}>${v}</button>`).join('');
-  $('#routes').querySelectorAll('.chip').forEach(c => c.onclick = () => { S.provider = c.dataset.id; $('#routes').querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x === c)); badge(); });
-  badge();
+  const b = $('#backend-badge');
+  b.textContent = S.meta.model ? `● Claude Agent SDK · ${S.meta.model} · every call via Mubit.ai` : '● offline deterministic agents (set MUBIT_API_KEY to run the Claude swarm via Mubit.ai)';
+  b.classList.toggle('live', !!S.meta.model);
   document.querySelectorAll('.pick-art').forEach(c => pickArt(c, c.dataset.art));
   document.querySelectorAll('.pick-card').forEach(c => c.onclick = () => choose(c.dataset.platform));
   $('#locations').innerHTML = S.meta.presets.map(p => `<button class="chip ${p.id === S.location ? 'on' : ''}" data-id="${p.id}">${p.name}</button>`).join('');
@@ -100,7 +94,9 @@ async function boot() {
   S.routes = (await (await fetch('/api/routes')).json()).routes;
   $('#route-file').onchange = async (ev) => { const f = ev.target.files[0]; if (!f) return; const text = await f.text();
     const r = await fetch('/api/routes/parse', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: f.name, text }) });
-    const d = await r.json(); if (!r.ok) { $('#route-note').textContent = d.detail; return; }
+    ev.target.value = '';
+    const d = await r.json().catch(() => ({ detail: `server error ${r.status}` })); if (!r.ok) { const n = $('#route-note'); n.textContent = '⚠ ' + d.detail; n.classList.add('err'); return; }
+    $('#route-note').classList.remove('err');
     S.upload = { name: f.name, text, n: d.waypoints.length, format: d.format }; S.route = { name: f.name, text, return: false }; renderRoutes(); };
   document.querySelectorAll('#stepper li').forEach(li => li.onclick = () => { const s = li.dataset.step; if (s === 'select' || s === 'config' || (S.run && s !== 'select' && (s !== 'route' || S.routeData))) show(s); });
   vehicleLoop($('#vehicle-art'), () => S);
@@ -123,3 +119,18 @@ function renderRoutes() {
 
 window.SPG = { S, plane, swarm, choose, launch, show, setLocation: (id) => document.querySelector(`#locations .chip[data-id="${id}"]`)?.click() };
 boot();
+
+function renderReview(v) {
+  const el = document.getElementById('review'); if (!el) return;
+  if (!v.ok) { el.innerHTML = `<div class="rv-h">Flight-ops review · Mubit.ai</div><div class="rv-err">${esc(v.error)}</div>`; return; }
+  const cls = (x) => x === 'GO' ? 'go' : x === 'NO-GO' ? 'nogo' : 'cond';
+  const p = v.previous, changed = p && (p.verdict !== v.verdict || JSON.stringify(p.conditions) !== JSON.stringify(v.conditions));
+  el.innerHTML = `<div class="rv-h">Flight-ops review · via Mubit.ai <span>${esc(v.model_served || v.model_asked)} · ${esc(v.request_id || '')}</span></div>
+    <div class="rv-v ${cls(v.verdict)}">${esc(v.verdict)}</div>
+    <ul>${(v.reasons || []).map(r => `<li>${esc(r)}</li>`).join('')}</ul>
+    ${(v.conditions || []).length ? `<div class="rv-c"><b>Conditions</b> ${v.conditions.map(esc).join(' · ')}</div>` : ''}
+    ${v.fix_first ? `<div class="rv-c"><b>Fix first</b> ${esc(v.fix_first)}</div>` : ''}
+    ${p ? `<div class="rv-p ${changed ? 'chg' : ''}"><b>${changed ? 'Changed since the last review of this route' : 'Same as the last review of this route'}</b> (${esc(p.at)}, ${esc(p.model_served || p.model_asked)}): <span class="rv-v ${cls(p.verdict)}">${esc(p.verdict)}</span> ${(p.conditions || []).map(esc).join(' · ')}</div>` : ''}
+    <button class="chip" id="rv-again">Ask the reviewer again</button>`;
+  document.getElementById('rv-again').onclick = async () => { el.querySelector('#rv-again').textContent = 'Asking Mubit…'; renderReview(await (await fetch(`/api/runs/${S.run.id}/review`, { method: 'POST' })).json()); };
+}

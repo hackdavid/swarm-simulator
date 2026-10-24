@@ -20,6 +20,7 @@ from .physics import MODES, TERRAINS, TRIALS, summarise_modes
 from . import route as RT, routesim as RS
 from .platforms import PLATFORMS, normalise
 from .swarm import Swarm, claude_config
+from . import review as RV
 from .weather import PRESETS, fetch_year, summarise
 
 WEB = Path(__file__).resolve().parent.parent / "web"
@@ -35,7 +36,6 @@ class RunRequest(BaseModel):
     agents: int = 24
     grid: int = 1024
     trials: int = 16
-    provider: str | None = None  # "direct" | "mubit"; default from SWARM_LLM_PROVIDER
     route: dict | None = None  # {"id": demo route} | {"name", "text", "return"} uploaded mission file
 
 
@@ -89,7 +89,7 @@ class Run:
             await self.emit({"type": "route", "route": self._route_payload()})
             await asyncio.sleep(float(os.environ.get("ROUTE_HOLD_SECONDS", "4")))
         n = max(4, min(int(self.req.agents), 30))
-        self.swarm = Swarm(self.platform, self.params, self.weather, self.climate, self.location, n, self.emit, self.req.provider, self.prof)
+        self.swarm = Swarm(self.platform, self.params, self.weather, self.climate, self.location, n, self.emit, self.prof)
         cfg = self.swarm.cfg
         await self.phase("swarm", backend=self.swarm.backend, model=cfg["model"] if cfg else None, provider=cfg["provider"] if cfg else None,
                          roster=self.swarm.roster())
@@ -204,6 +204,29 @@ class Run:
                          "combined_after": round(comb * 100, 2),
                          "combined_params": {k: (round(v, 2) if isinstance(v, float) else v) for k, v in combined.items()},
                          "cases": len(self.swarm.cases), "elapsed_s": round(time.time() - self.started, 1), "route_risk": route_risk})
+        await self.phase("review", text="Flight-ops go/no-go review via Mubit.ai")
+        self.review_summary = self._review_summary(fixes, comb, route_risk)
+        await self.emit({"type": "review", **(await RV.review(self.review_summary, self.route_key))})
+
+    @property
+    def route_key(self):
+        r = self.route or {}
+        return f"{self.platform}:{r.get('id') or r.get('name') or self.location['id']}"
+
+    def _review_summary(self, fixes, comb, route_risk):
+        modes, mf = MODES[self.platform], self.stats["mode_flights"]
+        tot = max(float(mf.sum()), 1.0)
+        pr = self.prof
+        return {"platform": self.platform, "location": self.location["name"],
+                "route": ({"name": pr["name"], "length_km": round(pr["length_m"] / 1000, 2), "cruise_m": round(pr["alt_m"]),
+                           "out_and_back": bool(pr["return"]), "airspace": [f"{z['name']} ({z['type']}, {round(100 * z['frac'])}% of route)" for z in pr["airspace"]],
+                           "planner": {k: pr["plan"][k] for k in ("ok", "direct_m", "planned_m", "detour_pct") if k in pr["plan"]} if pr.get("plan") else None}
+                          if pr else None),
+                "weather_hours": 8760, "simulated_flights": int(self.S * self.S * self.K), "pass_rate_pct": round(self.stats["pass_rate"] * 100, 1),
+                "failure_modes": [{"mode": modes[j]["name"], "share_pct": round(100 * float(mf[j]) / tot, 1)} for j in np.argsort(-mf)[:4] if mf[j] > 0],
+                "fixes": [{"fix": f["fix"], "pass_after_pct": f["pass_after"]} for f in fixes],
+                "all_fixes_pass_pct": round(comb * 100, 1), "agent_verified_cases": len(self.swarm.cases),
+                "people_struck_per_million_flights": route_risk["per_million_flights"] if route_risk else None}
 
     def cell(self, x, y):
         if self.env is None:
@@ -346,9 +369,8 @@ class Run:
 @app.get("/api/meta")
 def meta():
     cfg = claude_config()
-    routes = {p: (c["model"] if (c := claude_config(p)) else None) for p in ("direct", "mubit")}
     return {"platforms": PLATFORMS, "presets": PRESETS, "backend": "claude-agent-sdk" if cfg else "deterministic",
-            "model": cfg["model"] if cfg else None, "provider": cfg["provider"] if cfg else None, "routes": routes}
+            "model": cfg["model"] if cfg else None, "provider": cfg["provider"] if cfg else None}
 
 
 @app.post("/api/runs")
@@ -369,6 +391,19 @@ def routes():
     return {"routes": RT.DEMO_ROUTES, "formats": ["QGroundControl .plan", "GeoJSON", "KML", "GPX"]}
 
 
+@app.post("/api/runs/{rid}/review")
+async def re_review(rid: str):
+    run = RUNS.get(rid)
+    if not run or not getattr(run, "review_summary", None):
+        raise HTTPException(404, "no finished run with a review")
+    return await RV.review(run.review_summary, run.route_key)
+
+
+@app.get("/api/reviews")
+def reviews(route_key: str):
+    return {"reviews": RV.history(route_key, 10)}
+
+
 class RouteFile(BaseModel):
     name: str = "route"
     text: str
@@ -378,10 +413,11 @@ class RouteFile(BaseModel):
 def parse_route(f: RouteFile):
     try:
         r = RT.parse_route(f.text, f.name)
+        RT.validate(r)
+    except RT.RouteError as e:
+        raise HTTPException(400, str(e))
     except Exception as e:
-        raise HTTPException(400, f"could not parse route: {e}")
-    if len(r["waypoints"]) < 2:
-        raise HTTPException(400, "route needs at least 2 waypoints")
+        raise HTTPException(400, f"could not read {f.name}: {type(e).__name__}. Upload a QGroundControl .plan, GeoJSON, KML or GPX file.")
     return {"name": r["name"], "format": r["format"], "waypoints": r["waypoints"], "geofence": r["geofence"]}
 
 

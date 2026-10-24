@@ -12,7 +12,7 @@ Their verified findings seed a zoomable proving ground of more than one million 
 ![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-WebSocket-009688?logo=fastapi&logoColor=white)
 ![Claude Agent SDK](https://img.shields.io/badge/Claude-Agent%20SDK-D97757?logo=anthropic&logoColor=white)
-![Mubit.ai](https://img.shields.io/badge/LLM%20route-Mubit.ai%20%7C%20direct-6f42c1)
+![Mubit.ai](https://img.shields.io/badge/LLM%20route-every%20call%20via%20Mubit.ai-6f42c1)
 ![deck.gl](https://img.shields.io/badge/3D-deck.gl-2b6cb0)
 ![OpenStreetMap](https://img.shields.io/badge/Map-OpenStreetMap-7EBC6F?logo=openstreetmap&logoColor=white)
 ![Open-Meteo](https://img.shields.io/badge/Weather-Open--Meteo%20ERA5-f59e0b)
@@ -68,8 +68,9 @@ Field testing finds those edges slowly, expensively, and only in the weather you
 | **Million-cell proving ground** | 1024² = 1,048,576 cells by default, 16 trials each (16.8M simulated missions), streamed as binary tiles onto a zoomable canvas from ×0.2 to ×400. On a route, each cell is one real departure time. |
 | **3D cell replay** | Any cell opens into an extruded 3D city (deck.gl): A/B markers, straight-line ghost vs planned route, avoided towers, airspace volumes, 64 trial trajectories, wind, rain/snow, fog, day/night lighting, failure markers and a per-flight result card. |
 | **Design loop** | Per-failure-mode engineering fixes with before → after pass rates; one click re-runs the whole pipeline on the improved design. |
-| **Switchable LLM route** | Direct Anthropic-compatible API, or the [Mubit.ai](https://docs.mubit.ai) proxy for the agent swarm, which groups recurring agent calls into tasks for adapter training. Per run or per environment. |
-| **Runs without keys** | Deterministic search agents use the identical tool protocol when no LLM key is configured. |
+| **Every LLM call through Mubit.ai** | The agent swarm and the flight-ops go/no-go review call Claude only via the [Mubit.ai](https://docs.mubit.ai) proxy, which records calls, groups them into recurring tasks and trains task-specific adapters from rated replies. There is no direct-API path. |
+| **Flight-ops review (recurring Mubit task)** | After each run a reviewer gives GO / GO WITH CONDITIONS / NO-GO with reasons, crew conditions and the fix to apply first, shows the Mubit request id, and compares against the last review of the same route. |
+| **Offline mode** | Without `MUBIT_API_KEY` (or with `SWARM_BACKEND=mock`) labelled deterministic agents use the same tool protocol and make no LLM calls; the review then reports that Mubit is not configured. |
 
 ## See it
 
@@ -156,8 +157,8 @@ flowchart LR
     RUN --> WX --> OM
     RUN --> SW
     SW -- "MCP tools: find_weather_hours,<br/>run_physics_test, submit_failure_case" --> PHY
-    SW -- "SWARM_LLM_PROVIDER=mubit" --> MUBIT --> CLAUDE
-    SW -- "direct" --> CLAUDE
+    SW -- "every agent call" --> MUBIT --> CLAUDE
+    RUN -- "flight-ops review" --> MUBIT
     RUN --> GRID --> PHY
     RUN --> FIX --> PHY
     RUN --> WS --> UI2 & UI3 & UI4
@@ -222,23 +223,31 @@ No key needed to try it: without an LLM key the swarm runs deterministic agents 
 
 | Variable | Purpose |
 |---|---|
-| `ANTHROPIC_API_KEY` (+ `ANTHROPIC_BASE_URL`, `ANTHROPIC_MODEL` / `SWARM_MODEL`) | Direct route: Anthropic API or a compatible proxy. |
-| `PW_LLM_API_KEY`, `PW_LLM_BASE_URL`, `PW_LLM_MODEL` | Fallback proxy configuration for the direct route. |
-| `SWARM_LLM_PROVIDER` | `direct` (default) or `mubit`. Can also be chosen per run in the UI or via `provider` in `POST /api/runs`. |
-| `MUBIT_API_KEY` (+ `SWARM_MUBIT_MODEL`, default `claude-sonnet-5-5`) | Mubit.ai route (`https://api.mubit.ai/anthropic`). |
-| `SWARM_BACKEND=mock` | Force deterministic agents: no LLM calls, free, same tool protocol. |
+| `MUBIT_API_KEY` | Required for live agents. All LLM calls go to `https://api.mubit.ai/anthropic` (override with `MUBIT_BASE_URL`). |
+| `SWARM_MUBIT_MODEL` (`claude-sonnet-5-5`), `SWARM_MUBIT_SMALL_MODEL` (`claude-haiku-4-5`) | Models the swarm asks Mubit for. |
+| `SWARM_REVIEW_MODEL` (`claude-haiku-4-5`) | Model the flight-ops review asks Mubit for. |
+| `SWARM_BACKEND=mock` | Offline deterministic agents: no LLM calls, free, same tool protocol. |
 | `SWARM_CONCURRENCY` (30), `SWARM_AGENT_TIMEOUT` (300 s), `GRID_REVEAL_SECONDS` (16) | Swarm concurrency, per-agent timeout, pacing of the live grid fill. |
 
 Planner settings are run parameters on the Parameters screen: `avoid_obstacles` (on), `cruise_altitude_m` (120), `max_altitude_m` (120) and `obstacle_buffer_m` (30).
 
-### Benchmark an LLM route
+### Benchmark the swarm
 
 ```bash
-SWARM_LLM_PROVIDER=mubit uv run python scripts/bench_swarm.py --agents 8 --platform drone
-SWARM_LLM_PROVIDER=direct uv run python scripts/bench_swarm.py --agents 8 --platform drone
+uv run python scripts/bench_swarm.py --agents 8 --platform drone
 ```
 
-Runs the swarm only (no grid) and writes wall time, per-agent latency, time-to-first-tool, tool-call mix, verified cases, tokens, cost and fallbacks to `data/bench/`.
+Runs the swarm only (no grid) through Mubit and writes wall time, per-agent latency, time-to-first-tool, tool-call mix, verified cases, tokens and cost to `data/bench/`.
+
+### Mubit learning loop (flight-ops review)
+
+1. Each finished run sends one review call with the same instructions, so Mubit files them under one task (Mubit console → **Tasks**).
+2. Rate the replies in **Requests** (good / bad). Rated-up replies become the task's kept examples; Mubit trains an adapter once it has enough.
+3. When the adapter is live, the next review of the same route is answered by it. The report shows the served model, the Mubit request id and how the verdict changed against the previous review of that route (**Ask the reviewer again** re-asks on the same run).
+
+### Route files
+
+Sample client-style missions: [`docs/samples/guys_to_royal_london.plan`](docs/samples/guys_to_royal_london.plan) (QGroundControl) and [`.geojson`](docs/samples/guys_to_royal_london.geojson). Bad files are rejected with a specific message: empty, not JSON/XML, broken JSON (line and column), broken XML, fewer than 2 waypoints, invalid or 0,0 coordinates, over 2 MB, or longer than 60 km.
 
 ### API
 
@@ -284,7 +293,7 @@ Weather and mission routes are the first environmental layers. The same agent �
 | Phase | Layer | What it adds |
 |---|---|---|
 | **Shipped** | Weather year | Wind, gusts, shear, rain, snow, icing, heat, cold, pressure, humidity. |
-| **Shipped** | LLM routing | Direct API or Mubit.ai proxy for the agent swarm, switchable per run. |
+| **Shipped** | LLM routing | Every swarm and review call through Mubit.ai, with adapter training on the recurring tasks. |
 | **Shipped** | Mission routes | Demo or uploaded `.plan` / GeoJSON / KML / GPX routes; OSM buildings, trees, roads and water; Copernicus DSM; wind direction; per-leg energy and return reserve. |
 | **Shipped** | People, airspace & geofence | Population proxy with SORA 2.5 intrinsic-GRC lookup, openAIP airspace intersection, corridor drift, obstacle conflict, C2 link loss; robot pedestrians, crossings and localisation loss. |
 | **Shipped** | 3D planner & cell replay | A\* obstacle- and airspace-avoiding drone routes; 3D city replay of any cell with weather, trajectories and per-flight results. |
@@ -315,8 +324,8 @@ server/
   platforms.py  parameter schemas, presets, normalisation
   fixes.py      engineering fixes per failure mode
 web/            single-page UI (index.html, css/, js/: config, swarm, plane, map, city3d, scenes, main)
-scripts/        bench_swarm.py: LLM-route benchmark
-docs/           architecture, workflow, roadmap, screenshots, demo video
+scripts/        bench_swarm.py: swarm benchmark (via Mubit); seed_review.py: seeds the Mubit review task
+docs/           architecture, workflow, roadmap, screenshots, demo video, samples/ route files
 ```
 
 ## Honesty notes
