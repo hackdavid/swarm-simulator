@@ -163,7 +163,7 @@ export class City3D {
     el.classList.toggle('show', show); if (!show || el.dataset.k === `${this.k}`) return; el.dataset.k = `${this.k}`;
     const R = this.R, n = tr.fail_i ?? R.d.length - 1, flown = R.d[Math.min(n, R.d.length - 1)], mg = R.margins, pl = this.route.plan;
     const minClear = Math.min(...R.clear.slice(0, n + 1)), row = (a, b) => `<span>${a}</span><b>${b}</b>`;
-    el.innerHTML = `<div class="c3-res-h ${tr.pass ? 'ok' : 'bad'}">${tr.pass ? 'REACHED B · PASS' : 'FAILED · ' + esc(tr.name)}</div><div class="kv">
+    el.innerHTML = `<div class="c3-res-h ${tr.pass ? 'ok' : 'bad'}">${tr.pass ? (this.route.return ? 'MISSION COMPLETE · A → B → A · PASS' : 'REACHED B · PASS') : 'FAILED · ' + esc(tr.name)}</div><div class="kv">
       ${row('Flown', `${(flown / 1000).toFixed(2)} km${pl ? ` (straight line ${((pl.direct_m * (this.route.return ? 2 : 1)) / 1000).toFixed(2)} km)` : ''}`)}
       ${row('Flight time', `${Math.floor(last / 60)} min ${Math.round(last % 60)} s`)}
       ${row('Closest building', minClear >= 150 ? '> 150 m' : `${minClear.toFixed(0)} m`)}
